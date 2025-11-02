@@ -4,9 +4,9 @@ import numpy as np
 import torch
 import torch.nn as nn
 
-from decoder import Decoder
-from encoder import Encoder
-from quantizer import VectorQuantizer
+from deepul.models.vae.decoder import Decoder
+from deepul.models.vae.encoder import Encoder
+from deepul.models.vae.quantizer import VectorQuantizer
 
 __all__ = [
     "VQVAE",
