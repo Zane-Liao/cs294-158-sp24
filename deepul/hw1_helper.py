@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import torch
 
-from models.vae.vqvae import VQVAE
+from deepul.models.vae.vqvae import VQVAE
 
 from .utils import (
     get_data_dir,
