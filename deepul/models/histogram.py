@@ -4,7 +4,7 @@ import torch.nn.functional as F
 
 class Histogram(nn.Module):
     def __init__(self, d):
-        super.__init__()
+        super().__init__()
         self.logits = nn.Parameter(torch.zeros(d), requires_grad=True)
     
     def forward(self, x: torch.Tensor):
