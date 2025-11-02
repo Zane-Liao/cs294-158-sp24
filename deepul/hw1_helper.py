@@ -3,6 +3,8 @@ from os.path import dirname, join
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
+import torch.nn as nn
+import torch.optim as optim
 
 from deepul.models.vae.vqvae import VQVAE
 
@@ -20,6 +22,47 @@ from .utils import (
     show_samples,
 )
 
+# Come from other Dev code..., Only test
+def train_epoch(model, train_loader, optimizer, grad_clip=None):
+    train_epoch_losses = []
+    model.train()
+    for batch_idx, data in enumerate(train_loader):
+        optimizer.zero_grad()
+        loss = model.loss(data)
+        loss.backward()
+        if grad_clip:
+            nn.utils.clip_grad_norm_(model.parameters(), grad_clip)
+        optimizer.step()
+
+        train_epoch_losses.append(loss.item())
+    return train_epoch_losses
+
+def test(model, test_loader):
+    test_epoch_losses = []
+    model.eval()
+    with torch.no_grad():
+        for batch_idx, data in enumerate(test_loader):
+            loss = model.loss(data)
+
+            test_epoch_losses.append(loss.item())
+    return sum(test_epoch_losses)/len(test_epoch_losses)
+
+def train(model, train_loader, test_loader,
+          lr=1e-3, epochs=10, grad_clip=None, quiet=False):
+    optimizer = optim.Adam(model.parameters(), lr=lr)
+
+    train_losses = []
+    test_losses = [test(model, test_loader)]
+    for epoch in range(epochs):
+        train_epoch_losses = train_epoch(model, train_loader, optimizer, grad_clip=grad_clip)
+        train_losses.extend(train_epoch_losses)
+
+        test_epoch_loss = test(model, test_loader)
+        test_losses.append(test_epoch_loss)
+        if not quiet:
+            print(f"Train Epoch: {epoch+1} \tTest Loss: {test_epoch_loss}")
+
+    return train_losses, test_losses
 
 # Question 1
 def q1_sample_data_1():
