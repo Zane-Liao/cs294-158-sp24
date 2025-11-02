@@ -1,6 +1,12 @@
+import numpy as np
 import torch
 import torch.nn as nn
 
+__all__ = [
+    "DiagonalGaussianDistribution",
+    "ResidualBlock",
+    "VAE",
+]
 
 class DiagonalGaussianDistribution(object):
     def __init__(self, parameters, deterministic=False):

@@ -4,7 +4,11 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
-from deepul.models.residual import ResidualStack
+from residual import ResidualStack
+
+__all__ = [
+    "Decoder",
+]
 
 
 class Decoder(nn.Module):

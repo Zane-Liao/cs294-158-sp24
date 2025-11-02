@@ -4,10 +4,13 @@ import numpy as np
 import torch
 import torch.nn as nn
 
-from deepul.models.decoder import Decoder
-from deepul.models.encoder import Encoder
-from deepul.models.quantizer import VectorQuantizer
+from decoder import Decoder
+from encoder import Encoder
+from quantizer import VectorQuantizer
 
+__all__ = [
+    "VQVAE",
+]
 
 class VQVAE(nn.Module):
     def __init__(
