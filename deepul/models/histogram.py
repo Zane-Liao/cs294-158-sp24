@@ -15,7 +15,7 @@ class Histogram(nn.Module):
         logits = self.logits.expand(x.size(0), -1)
         return logits
     
-    def cross_loss(self, x: torch.Tensor):
+    def loss(self, x: torch.Tensor):
         x = x.to(next(self.parameters()).device)
         return F.cross_entropy(self(x), x)
 
