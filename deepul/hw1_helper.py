@@ -1,4 +1,5 @@
 from os.path import dirname, join
+from typing import List, Any, Tuple
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -21,6 +22,85 @@ from .utils import (
     savefig,
     show_samples,
 )
+
+# credits: https://github.com/yulun-rayn/CS294-158/blob/main/deepul/hw1_helper.py
+def _train_epoch_loop(
+    model: nn.Module,
+    train_loader: torch.utils.data.DataLoader,
+    optimizer: torch.optim.Optimizer,
+    grad_clip=None,
+) -> List[Any]:
+    train_epoch_losses = []
+    model.train()
+    
+    for _, data in enumerate(train_loader):
+        # zero gradient
+        optimizer.zero_grad()
+        
+        # forward + compute-loss
+        loss = model.loss(data)
+        
+        # backward
+        loss.backward()
+        
+        # (optional) gradient Clip
+        if grad_clip:
+            nn.utils.clip_grad_norm_(model.parameters(), grad_clip)
+        
+        # update parameters
+        optimizer.step()
+        
+        # Add-loss
+        train_epoch_losses.append(loss.item())
+    
+    # one epoch List [loss_step0, loss_step1, loss_step2, ...]
+    return train_epoch_losses
+
+
+def _simple_test_func(
+    model: nn.Module,
+    test_loader: torch.utils.data.DataLoader,
+) -> float:
+    test_epoch_losses = []
+    
+    model.eval()
+    
+    with torch.no_grad():
+        for _, data in enumerate(test_loader):
+            loss = model.loss(data)
+            
+            test_epoch_losses.append(loss.item())
+
+    return sum(test_epoch_losses) / max(1, len(test_epoch_losses))
+
+
+def train_loop(
+    model: nn.Module,
+    train_loader: torch.utils.data.DataLoader,
+    test_loader: torch.utils.data.DataLoader,
+    lr: float = 1e-3,
+    epochs_loop: int = 10,
+    grad_clip: float | None = None,
+    quiet: bool = False,
+) -> Tuple[List[Any], List[Any]]:
+    optimizer = optim.AdamW(model.parameters(), lr=lr)
+    
+    train_losses = []
+    test_losses = [_simple_test_func(model, test_loader)]
+    
+    for epoch in range(epochs_loop):
+        train_epoch_losses = _train_epoch_loop(model, train_loader, optimizer, grad_clip)
+        # Merge List, a = [1,2] a.extend([3,4]) -> a = [1,2,3,4]
+        train_losses.extend(train_epoch_losses)
+
+        test_epoch_loss = _simple_test_func(model, test_loader)
+        # Add List, a = [1,2] a.append([3,4]) -> a = [1,2,[3,4]]
+        test_losses.append(test_epoch_loss)
+        
+        if not quiet:
+            print(f"Train Epoch: {epoch+1}/{epochs_loop} Test Losses: {test_epoch_loss:.4f}")
+        
+    return (train_losses, test_losses)
 
 
 # Question 1

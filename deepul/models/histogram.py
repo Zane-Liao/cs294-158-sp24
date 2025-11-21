@@ -2,6 +2,10 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+__all__ = [
+    "Histogram",
+]
+
 class Histogram(nn.Module):
     def __init__(self, d):
         super().__init__()
