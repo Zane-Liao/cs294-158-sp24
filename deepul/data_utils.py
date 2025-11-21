@@ -17,5 +17,5 @@ class IntDataLoader:
         return self.data[index]
                 
     def __len__(self):
-        return len(self.labels)
+        return len(self.data)
     
