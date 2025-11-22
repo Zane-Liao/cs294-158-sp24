@@ -28,6 +28,8 @@ class DiscretizedLogisticMixture(nn.Module):
         self.log_scales = nn.Parameter(torch.zeros(n_components))
         
     def _compute_log_probs(self, x: torch.Tensor):
+        x = x.to(self.means.device).to(self.means.dtype)
+        
         if x.dim() == 1:
             x = x.unsqueeze(-1)
             
