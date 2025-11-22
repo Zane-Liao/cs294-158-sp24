@@ -7,7 +7,7 @@ __all__ = [
     "DiscretizedLogisticMixture",
 ]
  
-class DiscretizedLogisticMixture:
+class DiscretizedLogisticMixture(nn.Module):
     def __init__(self, n_components: int, max_val: int):
         """
         Args:
