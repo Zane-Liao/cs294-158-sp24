@@ -8,10 +8,9 @@ __all__ = [
     "IntDataLoader",
 ]
 
-# LongTensor Wrapper
 class IntDataLoader:
     def __init__(self, data):
-        self.data = torch.LongTensor(data)
+        self.data = torch.tensor(data, dtype=torch.int64)
 
     def __getitem__(self, index):
         return self.data[index]

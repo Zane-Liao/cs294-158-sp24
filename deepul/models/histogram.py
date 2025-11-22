@@ -1,3 +1,4 @@
+# credits: https://github.com/yulun-rayn/CS294-158/blob/main/deepul/models/histogram.py
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
