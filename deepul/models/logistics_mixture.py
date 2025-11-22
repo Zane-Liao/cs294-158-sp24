@@ -21,8 +21,8 @@ class DiscretizedLogisticMixture(nn.Module):
         # Logits (Unnormalized logarithm of the mixture coefficients)
         self.mixture_logits = nn.Parameter(torch.zeros(n_components))
         
-        initials_means = torch.linspace(0, max_val, steps=n_components)
-        self.means = nn.Parameter(torch.zeros(initials_means))
+        initials_means = torch.linspace(0, max_val, dtype=torch.float32, steps=n_components)
+        self.means = nn.Parameter(initials_means)
         
         # Log Scales (Logarithmic scales, initialized to 0, i.e., standard deviation is 1)
         self.log_scales = nn.Parameter(torch.zeros(n_components))
