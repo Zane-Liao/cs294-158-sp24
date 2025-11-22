@@ -88,4 +88,4 @@ class DiscretizedLogisticMixture(nn.Module):
     
     def get_probs(self):
         x_all = torch.arange(self.d + 1, device=self.mixture_logits.device)
-        return self.forward(x_all).cpu().numpy()
+        return self.forward(x_all).detach().cpu().numpy()
