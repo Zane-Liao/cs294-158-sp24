@@ -2,15 +2,6 @@
 # Modifications by Zane (2025)
 # Changes:
 #   - Importing modules
-
-from .encoder import Encoder
-from .decoder import Decoder
-from .quantizer import VectorQuantizer
-from .residual import ResidualLayer, ResidualStack
-from .vae import DiagonalGaussianDistribution, ResidualBlock, VAE
-from .vqvae import VQVAE
-
-
 __all__ = [
     "VAE",
     "VQVAE",
@@ -22,3 +13,10 @@ __all__ = [
     "ResidualLayer",
     "DiagonalGaussianDistribution",
 ]
+
+from .encoder import Encoder
+from .decoder import Decoder
+from .quantizer import VectorQuantizer
+from .residual import ResidualLayer, ResidualStack
+from .vae import DiagonalGaussianDistribution, ResidualBlock, VAE
+from .vqvae import VQVAE
