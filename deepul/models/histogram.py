@@ -2,6 +2,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import numpy
 
 __all__ = [
     "Histogram",
@@ -12,13 +13,13 @@ class Histogram(nn.Module):
         super().__init__()
         self.logits = nn.Parameter(torch.zeros(d), requires_grad=True)
     
-    def forward(self, x: torch.Tensor):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         logits = self.logits.expand(x.size(0), -1)
         return logits
     
-    def loss(self, x: torch.Tensor):
+    def loss(self, x: torch.Tensor) -> torch.Tensor:
         x = x.to(next(self.parameters()).device)
         return F.cross_entropy(self(x), x)
 
-    def get_probs(self, tau=1.0):
+    def get_probs(self, tau=1.0) -> numpy.ndarray:
         return F.softmax(self.logits / tau, dim=0).detach().cpu().numpy()

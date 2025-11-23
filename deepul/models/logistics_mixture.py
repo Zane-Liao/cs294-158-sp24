@@ -2,6 +2,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import numpy
 
 __all__ = [
     "DiscretizedLogisticMixture",
@@ -27,7 +28,7 @@ class DiscretizedLogisticMixture(nn.Module):
         # Log Scales (Logarithmic scales, initialized to 0, i.e., standard deviation is 1)
         self.log_scales = nn.Parameter(torch.zeros(n_components))
         
-    def _compute_log_probs(self, x: torch.Tensor):
+    def _compute_log_probs(self, x: torch.Tensor) -> torch.Tensor:
         x = x.to(self.means.device).to(self.means.dtype)
         
         if x.dim() == 1:
@@ -78,14 +79,14 @@ class DiscretizedLogisticMixture(nn.Module):
         
         return f_log_probs
     
-    def forward(self, x: torch.Tensor):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         return torch.exp(self._compute_log_probs(x))
     
     # NLL
-    def loss(self, x: torch.Tensor):
+    def loss(self, x: torch.Tensor) -> torch.Tensor:
         log_probs = self._compute_log_probs(x)
         return -torch.mean(log_probs)
     
-    def get_probs(self):
+    def get_probs(self) -> numpy.ndarray:
         x_all = torch.arange(self.d + 1, device=self.mixture_logits.device)
         return self.forward(x_all).detach().cpu().numpy()
