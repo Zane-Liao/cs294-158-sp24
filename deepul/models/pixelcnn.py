@@ -113,19 +113,23 @@ class PixelCNN(nn.Module):
         return F.binary_cross_entropy_with_logits(logits, target_one_hot, reduction="mean")
     
     def sample(self, n_samples: int = 100, image_size: int = 32) -> torch.Tensor:
-        self.eval()
-        
-        x = torch.zeros(n_samples, self.conv_in.in_channels, image_size, image_size).to(next(self.parameters()).device)
-        
+        device = next(self.parameters()).device
+        N = n_samples
+        C = self.conv_in.in_channels
+        K = self.n_classes_per_channel
+    
+        x = torch.zeros(N, C, image_size, image_size, device=device)
+    
         with torch.no_grad():
             for i in range(image_size):
                 for j in range(image_size):
                     logits = self.forward(x)
-                    logits = logits.view(n_samples, self.conv_in.in_channels, -1, image_size, image_size)
-                    probs = torch.softmax(logits[:,:, :, i, j], dim=2)
-                    sampled = torch.multinomial(probs, 1).squeeze(-1)
-                    x[:, :, i, j] = sampled.float() / (self.n_classes_per_channel-1)
-                    # p = torch.sigmoid(logits[:, :, i, j])
-                    # x[:, :, i, j] = torch.bernoulli(p)
-
+                    logits = logits.view(N, C, K, image_size, image_size)
+                    probs = torch.softmax(logits[:, :, :, i, j], dim=2)
+                    probs_flat = probs.reshape(-1, K)
+                    # Sample
+                    sampled_flat = torch.multinomial(probs_flat, 1)
+                    sampled = sampled_flat.view(N, C)
+                    x[:, :, i, j] = sampled.float() / (K - 1)
+                
         return x
