@@ -83,7 +83,7 @@ class PixelCNN(nn.Module):
             'A', in_channels, n_filters, kernel_size=7, padding=pad_7, channel_conditioning=None
         )
         
-        self.res_block = nn.Sequential(*[Residualblock(in_channels, kernel_size=7, _layer_norm=True) for _ in range(n_res_blocks)])
+        self.res_block = nn.Sequential(*[Residualblock(n_filters, kernel_size=7, _layer_norm=True) for _ in range(n_res_blocks)])
         
         self.post_relu = nn.ReLU(inplace=True)
         
@@ -101,9 +101,16 @@ class PixelCNN(nn.Module):
         return self.final(self.post_conv_2(out))
     
     def loss(self, x: torch.Tensor) -> torch.Tensor:
-        x = x.float()
+        N, C, H, W = x.shape
+        K = 4
+        x_int = x.long()
         logits = self.forward(x)
-        return F.binary_cross_entropy_with_logits(logits, x, reduction="mean")
+
+        target_one_hot = F.one_hot(x_int, num_classes=K)
+        target_one_hot = target_one_hot.permute(0, 1, 4, 2, 3)
+        target_one_hot = target_one_hot.reshape(N, C*K, H, W).float()
+
+        return F.binary_cross_entropy_with_logits(logits, target_one_hot, reduction="mean")
     
     def sample(self, n_samples: int = 100, image_size: int = 32) -> torch.Tensor:
         self.eval()

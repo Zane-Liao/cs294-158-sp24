@@ -6,7 +6,8 @@ from torch.utils.data import DataLoader
 
 __all__ = [
     "IntDataLoader",
-    "ImageDataLoader"
+    "ImageDataLoader",
+    "NCHWDataLoader",
 ]
 
 class IntDataLoader:
@@ -37,3 +38,16 @@ class ImageDataLoader(torch.utils.data.Dataset):
 
     def __len__(self):
         return len(self.data)    
+
+
+class NCHWDataLoader(torch.utils.data.Dataset):
+    def __init__(self, data):
+        self.data = torch.tensor(data, dtype=torch.float32)
+
+    def __getitem__(self, idx):
+        x = self.data[idx]          # NHWC
+        x = x.permute(2, 0, 1)      # C,H,W
+        return x
+
+    def __len__(self):
+        return len(self.data)
