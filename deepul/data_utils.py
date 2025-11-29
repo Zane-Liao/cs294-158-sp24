@@ -20,10 +20,10 @@ class IntDataLoader:
         return len(self.data)
     
 class ImageDataLoader(torch.utils.data.Dataset):
-    def __init__(self, data, to_nchw=True):
+    def __init__(self, data, device, to_nchw=True):
         # data: numpy array in NHWC or NCHW
         self.to_nchw = to_nchw
-        self.data = torch.tensor(data, dtype=torch.int64)
+        self.data = torch.tensor(data, dtype=torch.int64).to(device)
 
     def __getitem__(self, index):
         x = self.data[index]

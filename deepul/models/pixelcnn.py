@@ -57,7 +57,7 @@ class SimplePixelCNN(nn.Module):
     def sample(self, n_samples: int = 100, image_size: int = 20) -> torch.Tensor:
         self.eval()
         
-        x = torch.zeros(n_samples, 1, image_size, image_size)
+        x = torch.zeros(n_samples, 1, image_size, image_size).to(next(self.parameters()).device)
         
         for i in range(image_size):
             for j in range(image_size):
