@@ -150,11 +150,11 @@ def load_colored_mnist_text(file_path):
         colored_test_labels,
     )
 
-PROJECT_ROOT = "/Users/zaneliao/Documents/quant/Artificial Intelligence/cs294-158"
+# PROJECT_ROOT = "/Users/zaneliao/Documents/quant/Artificial Intelligence/cs294-158"
 
 def get_data_dir(hw_number: int):
     # cs294-158-sp24
-    return join(PROJECT_ROOT, 'deepul', 'homeworks', f'hw{hw_number}', 'data')
+    return join('cs294-158-sp24', 'homeworks', f'hw{hw_number}', 'data')
 
 
 def quantize(images: np.ndarray, n_bits: int = 8):
