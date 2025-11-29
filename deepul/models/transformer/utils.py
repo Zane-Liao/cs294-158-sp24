@@ -45,7 +45,7 @@ class TransformerVM(nn.Module):
             ]
         )
 
-        self.ln_final = RMSNorm(d_model=d_model)
+        self.ln_final = nn.LayerNorm(d_model=d_model)
         self.lm_head = nn.Linear(in_features=d_model, out_features=vocab_size)
 
     def forward(self, x: Int[torch.Tensor, "... sequence_length"]) -> Float[torch.Tensor, "... sequence_length vocab_size"]:
@@ -114,7 +114,7 @@ class TransformerBlock(nn.Module):
         self.d_model = d_model
         self.d_ff = d_ff
 
-        self.rms_norm1 = RMSNorm(d_model, **factory_kwargs)
+        self.rms_norm1 = nn.LayerNorm(d_model, **factory_kwargs)
         # Test Case: MultiHeadSelfAttention <==> FlashAttention
         self.self_attn = MultiHeadSelfAttention(
             d_model=d_model,
@@ -125,7 +125,7 @@ class TransformerBlock(nn.Module):
             **factory_kwargs,
             )
 
-        self.rms_norm2 = RMSNorm(d_model, **factory_kwargs)
+        self.rms_norm2 = nn.LayerNorm(d_model, **factory_kwargs)
         self.ff = SwiGLU(d_model, d_ff)
     
     def forward(self,

@@ -69,7 +69,7 @@ class MaskedConv2d(nn.Conv2d):
             in_groups = in_groups.unsqueeze(0) # (1,in)
             
             center_mask = (out_groups > in_groups).to(dtype=mask.dtype)
-            if mask_type == 'B':
+            if self.mask_type == 'B':
                 center_mask = center_mask + (out_groups == in_groups).to(dtype=mask.dtype)
             
             center_mask = (center_mask > 0).to(dtype=mask.dtype)
