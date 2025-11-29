@@ -53,7 +53,7 @@ class SimplePixelCNN(nn.Module):
         logits = self.forward(x)
         return F.binary_cross_entropy_with_logits(logits, x, reduction="mean")
     
-    def samples(self, n_samples: 100, image_size) -> torch.Tensor:
+    def sample(self, n_samples: 100, image_size) -> torch.Tensor:
         self.eval()
         
         x = torch.zeros(n_samples, 1, image_size, image_size)
@@ -91,12 +91,16 @@ class PixelCNN(nn.Module):
         self.final = nn.Conv2d(n_filters, in_channels*n_classes_per_channel, kernel_size=1)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        out_mid = self.post_relu(self.res_block(self.conv_in(x)))
-        return self.final(self.post_conv_2(self.post_conv_1(out_mid)))
+        out = self.post_relu(self.res_block(self.conv_in(x)))
+        
+        out = self.post_relu(self.post_conv_1(out))
+        
+        return self.final(self.post_conv_2(out))
     
     def loss(self, x: torch.Tensor) -> torch.Tensor:
         logits = self.forward(x)
         return F.cross_entropy(logits, x)
     
-    def samples(self, batch_size, image_size) -> torch.Tensor:
+    def sample(self, batch_size, image_size) -> torch.Tensor:
+        
         raise NotImplementedError

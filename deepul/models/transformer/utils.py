@@ -63,7 +63,7 @@ class TransformerVM(nn.Module):
     def loss(self) -> torch.Tensor:
         raise NotImplementedError
     
-    def samples(self) -> torch.Tensor:
+    def sample(self) -> torch.Tensor:
         raise NotImplementedError
     
 
@@ -78,7 +78,7 @@ class TransformerImage(nn.Module):
     def loss(self) -> torch.Tensor:
         raise NotImplementedError
     
-    def samples(self) -> torch.Tensor:
+    def sample(self) -> torch.Tensor:
         raise NotImplementedError
 
 
@@ -94,7 +94,7 @@ class TransformerMM(nn.Module):
     def loss(self) -> torch.Tensor:
         raise NotImplementedError
     
-    def samples(self) -> torch.Tensor:
+    def sample(self) -> torch.Tensor:
         raise NotImplementedError
     
 
