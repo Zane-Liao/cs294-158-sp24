@@ -84,6 +84,7 @@ class MaskedConv2d(nn.Conv2d):
         self.register_buffer('mask', mask)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        x = x.float()
         weight = self.weight * self.mask
         return F.conv2d(x, weight, self.bias, self.stride, self.padding, self.dilation, self.groups)
     
@@ -105,6 +106,7 @@ class Residualblock(nn.Module):
         self.relu = nn.ReLU(inplace=True)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        x = x.float()
         out = self.conv(self.relu(x))
         
         if self.layer_norm is not None:

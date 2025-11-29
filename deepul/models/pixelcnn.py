@@ -50,6 +50,7 @@ class SimplePixelCNN(nn.Module):
         return self.final(self.relu(self.body(self.conv_in(x))))
     
     def loss(self, x: torch.Tensor) -> torch.Tensor:
+        x = x.float()
         logits = self.forward(x)
         return F.binary_cross_entropy_with_logits(logits, x, reduction="mean")
     
@@ -91,6 +92,7 @@ class PixelCNN(nn.Module):
         self.final = nn.Conv2d(n_filters, in_channels*n_classes_per_channel, kernel_size=1)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        x = x.float()
         out = self.post_relu(self.res_block(self.conv_in(x)))
         
         out = self.post_relu(self.post_conv_1(out))
