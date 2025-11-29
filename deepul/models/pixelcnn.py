@@ -101,9 +101,24 @@ class PixelCNN(nn.Module):
         return self.final(self.post_conv_2(out))
     
     def loss(self, x: torch.Tensor) -> torch.Tensor:
+        x = x.float()
         logits = self.forward(x)
-        return F.cross_entropy(logits, x)
+        return F.binary_cross_entropy_with_logits(logits, x, reduction="mean")
     
-    def sample(self, batch_size, image_size) -> torch.Tensor:
+    def sample(self, n_samples: int = 100, image_size: int = 32) -> torch.Tensor:
+        self.eval()
         
-        raise NotImplementedError
+        x = torch.zeros(n_samples, self.conv_in.in_channels, image_size, image_size).to(next(self.parameters()).device)
+        
+        with torch.no_grad():
+            for i in range(image_size):
+                for j in range(image_size):
+                    logits = self.forward(x)
+                    logits = logits.view(n_samples, self.conv_in.in_channels, -1, image_size, image_size)
+                    probs = torch.softmax(logits[:,:, :, i, j], dim=2)
+                    sampled = torch.multinomial(probs, 1).squeeze(-1)
+                    x[:, :, i, j] = sampled.float() / (self.n_classes_per_channel-1)
+                    # p = torch.sigmoid(logits[:, :, i, j])
+                    # x[:, :, i, j] = torch.bernoulli(p)
+
+        return x
