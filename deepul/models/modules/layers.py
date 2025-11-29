@@ -119,7 +119,6 @@ class Residualblock(nn.Module):
         out = self.conv1x1(out)
         
         return x + out
-    
 
 
 class RotaryPositionalEmbedding(nn.Module):

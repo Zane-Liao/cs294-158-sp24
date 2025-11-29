@@ -97,31 +97,36 @@ class PixelCNN(nn.Module):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         x = x.float()
-        out = self.post_relu(self.res_block(self.conv_in(x)))
+
+        x_normalized = (x / (self.n_classes_per_channel - 1)) * 2 - 1
         
+        out = self.post_relu(self.res_block(self.conv_in(x_normalized)))
         out = self.post_relu(self.post_conv_1(out))
-        
         return self.final(self.post_conv_2(out))
     
     def loss(self, x: torch.Tensor) -> torch.Tensor:
         N, C, H, W = x.shape
-        K = 4
-        x_int = x.long()
-        logits = self.forward(x)
+        K = self.n_classes_per_channel
 
-        target_one_hot = F.one_hot(x_int, num_classes=K)
-        target_one_hot = target_one_hot.permute(0, 1, 4, 2, 3)
-        target_one_hot = target_one_hot.reshape(N, C*K, H, W).float()
+        logits = self.forward(x.float()) 
 
-        return F.binary_cross_entropy_with_logits(logits, target_one_hot, reduction="mean")
+        logits = logits.view(N, C, K, H, W)
+
+        target = x.long()
+
+        logits_flat = logits.view(N * C, K, H, W)
+        target_flat = target.view(N * C, H, W)
+        
+        return F.cross_entropy(logits_flat, target_flat)
     
-    def sample(self, n_samples: int = 100, image_size: tuple[int, int] = (32, 32)) -> torch.Tensor:
+    def sample(self, n_samples: int = 100, image_size: tuple[int, int] = (32, 32), temperature: float = 1.0) -> torch.Tensor:
         device = next(self.parameters()).device
         N = n_samples
         C = self.conv_in.in_channels
         K = self.n_classes_per_channel
-
         H, W = image_size
+
+        self.eval() 
 
         x = torch.zeros(N, C, H, W, device=device)
 
@@ -130,11 +135,12 @@ class PixelCNN(nn.Module):
                 for j in range(W):
                     logits = self.forward(x)
                     logits = logits.view(N, C, K, H, W)
-                    probs = torch.softmax(logits[:, :, :, i, j], dim=2)
+                    pixel_logits = logits[:, :, :, i, j]
+                    probs = torch.softmax(pixel_logits / temperature, dim=-1)
                     probs_flat = probs.reshape(-1, K)
-                    # Sample
-                    sampled_flat = torch.multinomial(probs_flat, 1)
-                    sampled = sampled_flat.view(N, C)
-                    x[:, :, i, j] = sampled.float() / (K - 1)
-            
-        return x
+                    sampled_flat = torch.multinomial(probs_flat, 1) # Shape: [N*C, 1]
+                    sampled = sampled_flat.view(N, C) # Shape: [N, C]
+                    
+                    x[:, :, i, j] = sampled.float()
+
+        return x / (K - 1)
