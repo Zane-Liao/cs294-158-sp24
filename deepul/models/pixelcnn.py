@@ -59,11 +59,12 @@ class SimplePixelCNN(nn.Module):
         
         x = torch.zeros(n_samples, 1, image_size, image_size).to(next(self.parameters()).device)
         
-        for i in range(image_size):
-            for j in range(image_size):
-                logits = self.forward(x)
-                p = torch.sigmoid(logits[:, :, i, j])
-                x[:, :, i, j] = torch.bernoulli(p)
+        with torch.no_grad():
+            for i in range(image_size):
+                for j in range(image_size):
+                    logits = self.forward(x)
+                    p = torch.sigmoid(logits[:, :, i, j])
+                    x[:, :, i, j] = torch.bernoulli(p)
 
         return x
 
