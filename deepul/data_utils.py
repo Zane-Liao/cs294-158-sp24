@@ -41,8 +41,8 @@ class ImageDataLoader(torch.utils.data.Dataset):
 
 
 class NCHWDataLoader(torch.utils.data.Dataset):
-    def __init__(self, data):
-        self.data = torch.tensor(data, dtype=torch.float32)
+    def __init__(self, data, device):
+        self.data = torch.tensor(data, dtype=torch.float32).to(device)
 
     def __getitem__(self, idx):
         x = self.data[idx]          # NHWC
