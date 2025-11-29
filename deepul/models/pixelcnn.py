@@ -77,6 +77,9 @@ class PixelCNN(nn.Module):
                  n_classes_per_channel: int = 4
                  ):
         super().__init__()
+        
+        self.n_classes_per_channel = n_classes_per_channel
+        
         pad_7 = 7 // 2
         
         self.conv_in = MaskedConv2d(
