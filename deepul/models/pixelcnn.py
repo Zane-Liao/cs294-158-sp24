@@ -115,24 +115,26 @@ class PixelCNN(nn.Module):
 
         return F.binary_cross_entropy_with_logits(logits, target_one_hot, reduction="mean")
     
-    def sample(self, n_samples: int = 100, image_size: int = 32) -> torch.Tensor:
+    def sample(self, n_samples: int = 100, image_size: tuple[int, int] = (32, 32)) -> torch.Tensor:
         device = next(self.parameters()).device
         N = n_samples
         C = self.conv_in.in_channels
         K = self.n_classes_per_channel
-    
-        x = torch.zeros(N, C, image_size, image_size, device=device)
-    
+
+        H, W = image_size
+
+        x = torch.zeros(N, C, H, W, device=device)
+
         with torch.no_grad():
-            for i in range(image_size):
-                for j in range(image_size):
+            for i in range(H):
+                for j in range(W):
                     logits = self.forward(x)
-                    logits = logits.view(N, C, K, image_size, image_size)
+                    logits = logits.view(N, C, K, H, W)
                     probs = torch.softmax(logits[:, :, :, i, j], dim=2)
                     probs_flat = probs.reshape(-1, K)
                     # Sample
                     sampled_flat = torch.multinomial(probs_flat, 1)
                     sampled = sampled_flat.view(N, C)
                     x[:, :, i, j] = sampled.float() / (K - 1)
-                
+            
         return x
