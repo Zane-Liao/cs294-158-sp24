@@ -3,7 +3,7 @@
 *.egg-info
 *__pycache__
 *.png
-# *.pkl
+*.pkl
 *.jpg
 .vscode/
 *.aux
