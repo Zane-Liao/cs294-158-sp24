@@ -12,3 +12,4 @@
 *.log
 *.out
 *.synctex.gz
+*.pth

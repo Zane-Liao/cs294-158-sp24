@@ -21,7 +21,7 @@ class SimplePixelCNN(nn.Module):
         * Appropriate ReLU nonlinearities in-between
         * 64 convolutional filters
     """
-    def __init__(self, in_channels: int = 3, n_filters: int = 64):
+    def __init__(self, in_channels: int = 1, n_filters: int = 64):
         super().__init__()
         pad_7 = 7 // 2
         
@@ -54,7 +54,7 @@ class SimplePixelCNN(nn.Module):
         logits = self.forward(x)
         return F.binary_cross_entropy_with_logits(logits, x, reduction="mean")
     
-    def sample(self, n_samples: 100, image_size) -> torch.Tensor:
+    def sample(self, n_samples: int = 100, image_size: int = 20) -> torch.Tensor:
         self.eval()
         
         x = torch.zeros(n_samples, 1, image_size, image_size)
