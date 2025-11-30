@@ -119,7 +119,7 @@ class PixelCNN(nn.Module):
         
         return F.cross_entropy(logits_flat, target_flat)
     
-    def sample(self, n_samples: int = 100, image_size: tuple[int, int] = (32, 32), temperature: float = 1.0) -> torch.Tensor:
+    def sample(self, n_samples: int = 100, image_size: tuple[int, int] = (32, 32), temperature: float = 0.8) -> torch.Tensor:
         device = next(self.parameters()).device
         N = n_samples
         C = self.conv_in.in_channels
