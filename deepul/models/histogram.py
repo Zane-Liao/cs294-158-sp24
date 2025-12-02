@@ -9,7 +9,7 @@ __all__ = [
 ]
 
 class Histogram(nn.Module):
-    def __init__(self, d):
+    def __init__(self, d) -> None:
         super().__init__()
         self.logits = nn.Parameter(torch.zeros(d), requires_grad=True)
     

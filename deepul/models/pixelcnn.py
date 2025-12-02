@@ -21,7 +21,7 @@ class SimplePixelCNN(nn.Module):
         * Appropriate ReLU nonlinearities in-between
         * 64 convolutional filters
     """
-    def __init__(self, in_channels: int = 1, n_filters: int = 64):
+    def __init__(self, in_channels: int = 1, n_filters: int = 64) -> None:
         super().__init__()
         pad_7 = 7 // 2
         
@@ -75,7 +75,7 @@ class PixelCNN(nn.Module):
                  n_filters: int = 128,
                  n_res_blocks: int = 8,
                  n_classes_per_channel: int = 4
-                 ):
+                 ) -> None:
         super().__init__()
         
         self.n_classes_per_channel = n_classes_per_channel

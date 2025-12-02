@@ -1,11 +1,11 @@
 __all__ = [
-    "TransformerVM",
-    "TransformerImage",
-    "TransformerMM",
+    "GPT",
+    "IGPT",
+    "MMGPT",
 ]
 
 from .utils import (
-    TransformerVM,
-    TransformerImage,
-    TransformerMM,
+    GPT,
+    IGPT,
+    MMGPT,
 )

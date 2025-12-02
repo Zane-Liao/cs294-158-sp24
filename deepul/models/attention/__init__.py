@@ -1,5 +1,5 @@
 __all__ = [
-    "MultiHeadSelfAttention",
+    "MultiHeadAttention",
 ]
 
-from .utils import MultiHeadSelfAttention
+from .utils import MultiHeadAttention

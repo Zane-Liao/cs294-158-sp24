@@ -9,7 +9,7 @@ __all__ = [
 ]
  
 class DiscretizedLogisticMixture(nn.Module):
-    def __init__(self, n_components: int, max_val: int):
+    def __init__(self, n_components: int, max_val: int) -> None:
         """
         Args:
             n_components (m): The number of components in the mix.

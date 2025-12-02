@@ -4,13 +4,13 @@ import torch.nn as nn
 import torch.nn.functional as F
 from typing import Optional, Tuple, Union
 
-from deepul.models.modules.layers import RotaryPositionalEmbedding
+from deepul.models.modules.layers import Linear, RotaryPositionalEmbedding
 
 __all__ = [
-    "MultiHeadSelfAttention",
+    "MultiHeadAttention",
 ]
 
-class MultiHeadSelfAttention(nn.Module):
+class MultiHeadAttention(nn.Module):
     """"""
     def __init__(self,
                  d_model: int,
@@ -20,15 +20,15 @@ class MultiHeadSelfAttention(nn.Module):
                  rope_exist: bool | None = None,
                  device=None,
                  dtype=None,
-            ):
+            ) -> None:
         factory_kwargs = {"device": device, "dtype": dtype}
         super().__init__()
         self.d_model = d_model
         self.num_heads = num_heads
         self.d_k = d_model // num_heads
 
-        self.qkv_proj = nn.Linear(d_model, 3 * d_model, **factory_kwargs)
-        self.o_proj = nn.Linear(d_model, d_model, **factory_kwargs)
+        self.qkv_proj = Linear(d_model, 3 * d_model, **factory_kwargs)
+        self.o_proj = Linear(d_model, d_model, **factory_kwargs)
         
         self.rope_exist = rope_exist
         if self.rope_exist:

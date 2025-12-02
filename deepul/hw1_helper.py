@@ -81,7 +81,7 @@ def train_loop(
     lr: float = 1e-3,
     epochs_loop: int = 10,
     grad_clip: float | None = None,
-    _optimizer: torch.optim.Optimizer = optim.AdamW,
+    _optimizer: torch.optim.Optimizer = optim.Adam,
     quiet: bool = False,
 ) -> Tuple[List[Any], List[Any]]:
     optimizer = optim.AdamW(model.parameters(), lr=lr) if _optimizer == optim.AdamW else optim.Adam(model.parameters(), lr=lr)
