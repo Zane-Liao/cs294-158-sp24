@@ -7,10 +7,12 @@ from typing import Optional, Tuple, Union
 from deepul.models.modules.layers import Linear, RotaryPositionalEmbedding
 
 __all__ = [
+    "CausalSelfAttention",
+    "LinearAttention",
     "MultiHeadAttention",
 ]
 
-class MultiHeadAttention(nn.Module):
+class CausalSelfAttention(nn.Module):
     """"""
     def __init__(self,
                  d_model: int,
@@ -66,6 +68,25 @@ class MultiHeadAttention(nn.Module):
             diagonal=1
         )
         
+        # FlashAttention
         output = F.scaled_dot_product_attention(q, k, v, ~causal_mask)
         
         return self.o_proj(rearrange(output, "b h t d -> b t (h d)"))
+    
+    
+class LinearAttention(nn.Module):
+    def __init__(self) -> None:
+        super().__init__()
+        raise NotImplementedError
+        
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        raise NotImplementedError
+    
+    
+class MultiHeadAttention(nn.Module):
+    def __init__(self) -> None:
+        super().__init__()
+        raise NotImplementedError
+        
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        raise NotImplementedError

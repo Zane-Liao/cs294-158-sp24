@@ -7,13 +7,15 @@ from typing import Any, Iterable, Optional, Tuple, Union
 
 from jaxtyping import Float, Int
 
-from deepul.models.attention.utils import MultiHeadAttention
+from deepul.models.attention.utils import CausalSelfAttention
 from deepul.models.modules.layers import Linear, Embedding, LayerNorm, FFN
 
 __all__ = [
     "GPT",
     "IGPT",
     "MMGPT",
+    "compute_lr",
+    "gradient_cliping",
 ]
 
 class GPT(nn.Module):
@@ -34,8 +36,6 @@ class GPT(nn.Module):
         self.num_layers = num_layers
         
         self.embedding = Embedding(num_embeddings=vocab_size, embedding_dim=d_model)
-        
-        self.position_embedding = Embedding()
 
         self.layers = nn.ModuleList(
             [
@@ -64,7 +64,7 @@ class GPT(nn.Module):
 
         return self.lm_head(x)
     
-    def loss(self) -> torch.Tensor:
+    def loss(self, x: torch.Tensor) -> torch.Tensor:
         raise NotImplementedError
     
     def sample(self) -> torch.Tensor:
@@ -79,7 +79,7 @@ class IGPT(nn.Module):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         raise NotImplementedError
     
-    def loss(self) -> torch.Tensor:
+    def loss(self, x: torch.Tensor) -> torch.Tensor:
         raise NotImplementedError
     
     def sample(self) -> torch.Tensor:
@@ -95,7 +95,7 @@ class MMGPT(nn.Module):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         raise NotImplementedError
     
-    def loss(self) -> torch.Tensor:
+    def loss(self, x: torch.Tensor) -> torch.Tensor:
         raise NotImplementedError
     
     def sample(self) -> torch.Tensor:
@@ -119,7 +119,7 @@ class GPTBlock(nn.Module):
 
         self.layer_norm1 = LayerNorm(d_model, **factory_kwargs)
 
-        self.self_attn = MultiHeadAttention(
+        self.self_attn = CausalSelfAttention(
             d_model=d_model,
             num_heads=num_heads,
             theta=None,
