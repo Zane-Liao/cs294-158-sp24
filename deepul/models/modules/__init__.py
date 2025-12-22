@@ -8,7 +8,7 @@ __all__ = [
     "RMSNorm",
     "GELU",
     "FFN",
-    "PositionalEncoding",
+    "PositionalEncoding1D",
     "LayerNorm",
 ]
 
@@ -22,6 +22,6 @@ from .layers import (
     RMSNorm,
     GELU,
     FFN,
-    PositionalEncoding,
+    PositionalEncoding1D,
     LayerNorm,
 )

@@ -7,12 +7,13 @@ from typing import Optional, Tuple, Union
 from deepul.models.modules.layers import Linear, RotaryPositionalEmbedding
 
 __all__ = [
+    "RotaryCausalSelfAttention",
     "CausalSelfAttention",
-    "LinearAttention",
     "MultiHeadAttention",
+    "LinearAttention",
 ]
 
-class CausalSelfAttention(nn.Module):
+class RotaryCausalSelfAttention(nn.Module):
     """"""
     def __init__(self,
                  d_model: int,
@@ -62,17 +63,44 @@ class CausalSelfAttention(nn.Module):
                 raise ValueError("token_positions must be provided when use_rope is True.")
             q = self.rope(q, token_positions)
             k = self.rope(k, token_positions)
-
-        causal_mask = torch.triu(
-            torch.ones(seq_len, seq_len, device=q.device, dtype=torch.bool),
-            diagonal=1
-        )
         
-        # FlashAttention
-        output = F.scaled_dot_product_attention(q, k, v, ~causal_mask)
+        output = F.scaled_dot_product_attention(q, k, v, is_causal=True)
         
         return self.o_proj(rearrange(output, "b h t d -> b t (h d)"))
     
+    
+class CausalSelfAttention(nn.Module):
+    def __init__(self,
+                 d_model: int,
+                 num_heads: int,
+                 device=None,
+                 dtype=None,
+                 ) -> None:
+        factory_kwargs = {"device": device, "dtype": dtype}
+        super().__init__()
+        
+        self.d_model = d_model
+        self.num_heads = num_heads
+        
+        self.d_k = d_model // num_heads
+        
+        self.qkv_proj = Linear(d_model, 3*d_model, **factory_kwargs)
+        self.o_proj = Linear(d_model, d_model, **factory_kwargs)
+        
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        batch_size, seq_len, _ = x.shape
+        
+        qkv = self.qkv_proj(x)
+        q, k, v = qkv.chunk(3, dim=-1)
+        
+        q = rearrange(q, "b t (h d) -> b h t d", h=self.num_heads)
+        k = rearrange(k, "b t (h d) -> b h t d", h=self.num_heads)
+        v = rearrange(v, "b t (h d) -> b h t d", h=self.num_heads)
+        
+        output = F.scaled_dot_product_attention(q, k, v, is_causal=True)
+        
+        return self.o_proj(rearrange(output, "b h t d -> b t (h d)"))
+
     
 class LinearAttention(nn.Module):
     def __init__(self) -> None:

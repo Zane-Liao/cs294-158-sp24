@@ -17,6 +17,6 @@ __all__ = [
 from .encoder import Encoder
 from .decoder import Decoder
 from .quantizer import VectorQuantizer
-from .residual import ResidualLayer, ResidualStack
-from .vae import DiagonalGaussianDistribution, ResidualBlock, VAE
+from .residual import ResidualBlock, ResidualLayer, ResidualStack
+from .vae import DiagonalGaussianDistribution, VAE
 from .vqvae import VQVAE

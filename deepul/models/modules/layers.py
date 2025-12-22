@@ -3,6 +3,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from typing import Optional, Tuple, Union
+from einops import einsum, rearrange
 
 __all__ = [
     "MaskedConv2d",
@@ -14,7 +15,7 @@ __all__ = [
     "RMSNorm",
     "GELU",
     "FFN",
-    "PositionalEncoding",
+    "PositionalEncoding1D",
     "LayerNorm",
 ]
 
@@ -133,7 +134,7 @@ class Linear(nn.Module):
     out_features: int
     weight: torch.Tensor
     
-    def __init__(self, in_features, out_features, bias=True, device=None, dtype=None) -> None:
+    def __init__(self, in_features, out_features, bias=False, device=None, dtype=None) -> None:
         """
         linear transformation module.
     
@@ -155,7 +156,7 @@ class Linear(nn.Module):
             torch.empty((out_features, in_features), **factory_kwargs)
         )
         
-        self.bias = nn.Parameter(torch.empty(out_features, **factory_kwargs)) if bias else None
+        self.bias = nn.Parameter(torch.empty(out_features, **factory_kwargs)) if bias else self.register_buffer("bias", None)
         
         std = math.sqrt(2 / (in_features + out_features))
         
@@ -273,7 +274,7 @@ class RMSNorm(nn.Module):
         self.eps = eps
         self.weight = nn.Parameter(torch.ones(d_model, **factory_kwargs))
         
-    def _norm(self, x):
+    def _norm(self, x: torch.Tensor) -> torch.Tensor:
         return x * torch.rsqrt(torch.mean(x * x, dim=-1, keepdim=True) + self.eps)
     
     def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -289,6 +290,7 @@ class GELU(nn.Module):
         
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return gelu(x)
+
 
 # Impl: https://github.com/pytorch/pytorch/issues/20464
 # $\text{GELU}(x) = 0.5 * x * (1 + \text{Tanh}(\sqrt{2 / \pi} * (x + 0.044715 * x^3)))$
@@ -308,15 +310,39 @@ class FFN(nn.Module):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return self.dropout(self.w2(self.gelu(self.w1(x))))
-    
+
+
+# Impl: https://github.com/hyunwoongko/transformer
+class PositionalEncoding1D(nn.Module):
+    def __init__(self, d_model: int, max_len: int, device=None) -> None:
+        super().__init__()
+        
+        self.encoding = torch.zeros(max_len, d_model, device=device)
+        self.encoding.requires_grad = False # Not Need Compute Gradient
+        
+        pos = torch.arange(0, max_len, device=device)
+        pos = pos.float().unsqueeze(-1)
+        
+        _2i = torch.arange(0, d_model, step=2, device=device).float()
+        
+        self.encoding[:, 0::2] = torch.sin(pos / (10000 ** (_2i / d_model)))
+        self.encoding[:, 1::2] = torch.cos(pos / (10000 ** (_2i / d_model)))
+        
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        _, seq_len = x.size()
+        
+        return self.encoding[:seq_len, :]
+
+
 # Impl: https://github.com/hyunwoongko/transformer
 # $y = \frac{x - \mathrm{E}[x]}{ \sqrt{\mathrm{Var}[x] + \epsilon}} * \gamma + \beta$
 class LayerNorm(nn.module):
-    def __init__(self, d_model, eps=1e-6) -> None:
+    def __init__(self, d_model, eps=1e-6, device=None, dtype=None) -> None:
+        factory_kwargs = {"device": device, "dtype": dtype}
         super().__init__()
         
-        self.gamma = nn.Parameter(torch.ones(d_model))
-        self.beta = nn.Parameter(torch.zeros(d_model))
+        self.gamma = nn.Parameter(torch.ones(d_model, **factory_kwargs))
+        self.beta = nn.Parameter(torch.zeros(d_model, **factory_kwargs))
         self.eps = eps
         
     def forward(self, x: torch.Tensor) -> torch.Tensor:

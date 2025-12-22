@@ -7,8 +7,9 @@ from typing import Any, Iterable, Optional, Tuple, Union
 
 from jaxtyping import Float, Int
 
-from deepul.models.attention.utils import CausalSelfAttention
-from deepul.models.modules.layers import Linear, Embedding, LayerNorm, FFN
+from deepul.models.attention.utils import RotaryCausalSelfAttention, CausalSelfAttention
+from deepul.models.modules.layers import Linear, Embedding, LayerNorm, FFN, RMSNorm, SwiGLU
+from transformers import ImageGPTModel
 
 __all__ = [
     "GPT",
@@ -27,6 +28,7 @@ class GPT(nn.Module):
                 d_model: int, 
                 num_heads: int,
                 d_ff: int,
+                rope_theta: int,
                 ) -> None:
         super().__init__()
         self.vocab_size = vocab_size
@@ -43,13 +45,14 @@ class GPT(nn.Module):
                     d_model=d_model,
                     num_heads=num_heads,
                     d_ff=d_ff,
+                    theta=rope_theta,
                     max_seq_len=context_length,
                 )
                 for _ in range(num_layers)
             ]
         )
 
-        self.ln_final = LayerNorm(d_model=d_model)
+        self.ln_final = RMSNorm(d_model=d_model)
         self.lm_head = Linear(in_features=d_model, out_features=vocab_size)
 
     def forward(self, x: Int[torch.Tensor, "... sequence_length"]) -> Float[torch.Tensor, "... sequence_length vocab_size"]:
@@ -72,12 +75,46 @@ class GPT(nn.Module):
     
 
 class IGPT(nn.Module):
-    def __init__(self) -> None:
+    """"""
+    def __init__(self,
+                vocab_size: int,
+                num_layers: int,
+                d_model: int, 
+                num_heads: int,
+                d_ff: int,
+                ) -> None:
         super().__init__()
-        raise NotImplementedError
+        self.vocab_size = vocab_size
         
+        self.num_layers = num_layers
+        
+        self.embedding = Embedding(num_embeddings=vocab_size, embedding_dim=d_model)
+
+        self.layers = nn.ModuleList(
+            [
+                IGPTBlock(
+                    d_model=d_model,
+                    num_heads=num_heads,
+                    d_ff=d_ff,
+                )
+                for _ in range(num_layers)
+            ]
+        )
+
+        self.ln_final = LayerNorm(d_model=d_model)
+        self.lm_head = Linear(in_features=d_model, out_features=vocab_size)
+
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        raise NotImplementedError
+        _, sequence_length = x.size()
+
+        x = self.embedding(x)
+        
+        for layer in self.layers:
+            x = layer(x)
+            
+        x = self.ln_final(x)
+
+        return self.lm_head(x)
     
     def loss(self, x: torch.Tensor) -> torch.Tensor:
         raise NotImplementedError
@@ -100,14 +137,16 @@ class MMGPT(nn.Module):
     
     def sample(self) -> torch.Tensor:
         raise NotImplementedError
-    
 
+
+# Pre-LN
 class GPTBlock(nn.Module):
     """"""
     def __init__(self,
                 d_model: int,
                 num_heads: int,
                 d_ff: int,
+                theta: float | None = None,
                 max_seq_len: int | None = None,
                 device=None,
                 dtype=None,
@@ -117,19 +156,19 @@ class GPTBlock(nn.Module):
         self.d_model = d_model
         self.d_ff = d_ff
 
-        self.layer_norm1 = LayerNorm(d_model, **factory_kwargs)
+        self.layer_norm1 = RMSNorm(d_model, **factory_kwargs)
 
-        self.self_attn = CausalSelfAttention(
+        self.self_attn = RotaryCausalSelfAttention(
             d_model=d_model,
             num_heads=num_heads,
-            theta=None,
+            theta=theta,
             max_seq_len=max_seq_len,
-            rope_exist=None,
+            rope_exist=True,
             **factory_kwargs,
             )
 
-        self.layer_norm2 = LayerNorm(d_model, **factory_kwargs)
-        self.ff = FFN(d_model, d_ff)
+        self.layer_norm2 = RMSNorm(d_model, **factory_kwargs)
+        self.ff = SwiGLU(d_model, d_ff)
     
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         # Create token_positions
@@ -139,6 +178,38 @@ class GPTBlock(nn.Module):
         attn_output = self.self_attn(self.layer_norm1(x),
                                          token_positions=token_positions
                                         )
+        y = x + attn_output
+        
+        return y + self.ff(self.layer_norm2(y))
+
+
+# Pre-LN
+class IGPTBlock(nn.Module):
+    def __init__(self,
+                 d_model: int,
+                 num_heads: int,
+                 d_ff: int,
+                 device=None,
+                 dtype=None,
+                 ) -> None:
+        factory_kwargs = {"device": device, "dtype": dtype}
+        super().__init__()
+        self.d_model = d_model
+        self.d_ff = d_ff
+        
+        self.layer_norm1 = LayerNorm(d_model, **factory_kwargs)
+        
+        self.self_attn = CausalSelfAttention(
+            d_model=d_model,
+            num_heads=num_heads
+        )
+        
+        self.layer_norm2 = LayerNorm(d_model, **factory_kwargs)
+        self.ff = FFN(d_model, d_ff)
+        
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        attn_output = self.self_attn(self.layer_norm1(x))
+        
         y = x + attn_output
         
         return y + self.ff(self.layer_norm2(y))

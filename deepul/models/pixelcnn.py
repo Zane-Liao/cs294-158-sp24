@@ -63,16 +63,18 @@ class SimplePixelCNN(nn.Module):
             for i in range(image_size):
                 for j in range(image_size):
                     logits = self.forward(x)
+                    
                     p = torch.sigmoid(logits[:, :, i, j])
+
                     x[:, :, i, j] = torch.bernoulli(p)
 
-        return x
+        return x.float()
 
 
 class PixelCNN(nn.Module):
     def __init__(self,
                  in_channels: int = 3,
-                 n_filters: int = 128,
+                 n_filters: int = 120,
                  n_res_blocks: int = 8,
                  n_classes_per_channel: int = 4
                  ) -> None:
@@ -134,11 +136,17 @@ class PixelCNN(nn.Module):
             for i in range(H):
                 for j in range(W):
                     logits = self.forward(x)
+                    
                     logits = logits.view(N, C, K, H, W)
+                    
                     pixel_logits = logits[:, :, :, i, j]
+                    
                     probs = torch.softmax(pixel_logits / temperature, dim=-1)
+                    
                     probs_flat = probs.reshape(-1, K)
+                    
                     sampled_flat = torch.multinomial(probs_flat, 1) # Shape: [N*C, 1]
+                    
                     sampled = sampled_flat.view(N, C) # Shape: [N, C]
                     
                     x[:, :, i, j] = sampled.float()
