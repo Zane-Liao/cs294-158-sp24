@@ -95,8 +95,6 @@ class IGPT(nn.Module):
         
         self.d_model = d_model
         
-        self.pos_encoding = PositionalEncoding1D(d_model, max_len=max_seq_len, device=device)
-        
         self.embedding = Embedding(num_embeddings=vocab_size, embedding_dim=d_model, **factory_kwargs)
 
         self.layers = nn.ModuleList(
@@ -118,10 +116,6 @@ class IGPT(nn.Module):
         _, sequence_length = x.size()
 
         x = self.embedding(x)
-        
-        x = x * math.sqrt(self.d_model)
-        
-        x = self.pos_encoding(x)
         
         for layer in self.layers:
             x = layer(x)
