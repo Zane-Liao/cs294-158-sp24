@@ -336,7 +336,7 @@ class PositionalEncoding1D(nn.Module):
 
 # Impl: https://github.com/hyunwoongko/transformer
 # $y = \frac{x - \mathrm{E}[x]}{ \sqrt{\mathrm{Var}[x] + \epsilon}} * \gamma + \beta$
-class LayerNorm(nn.module):
+class LayerNorm(nn.Module):
     def __init__(self, d_model, eps=1e-6, device=None, dtype=None) -> None:
         factory_kwargs = {"device": device, "dtype": dtype}
         super().__init__()
