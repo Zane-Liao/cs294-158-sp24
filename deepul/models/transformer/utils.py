@@ -95,6 +95,8 @@ class IGPT(nn.Module):
         
         self.d_model = d_model
         
+        self.max_seq_len = max_seq_len
+        
         self.embedding = Embedding(num_embeddings=vocab_size, embedding_dim=d_model, **factory_kwargs)
 
         self.layers = nn.ModuleList(
@@ -148,7 +150,7 @@ class IGPT(nn.Module):
         x = torch.zeros((n_samples, 1), dtype=torch.long, device=device)
         
         for _ in range(total_pixels):
-            cond = x if x.size(1) <= self.pos_encoding.max_len else x[:, -self.pos_encoding.max_len:]
+            cond = x if x.size(1) <= self.max_seq_len else x[:, -self.max_seq_len:]
 
             logits = self(cond) # output shape: (B, T, vocab_size)
 
