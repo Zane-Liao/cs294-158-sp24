@@ -150,7 +150,7 @@ def load_colored_mnist_text(file_path):
         colored_test_labels,
     )
 
-PROJECT_ROOT = "/Users/zaneliao/Documents/quant/Artificial-Intelligence/cs236/cs294-158-hw/deepul"
+PROJECT_ROOT = "/Users/zaneliao/Documents/quant/Artificial Intelligence/cs294-158"
 
 def get_data_dir(hw_number: int):
     # cs294-158-sp24

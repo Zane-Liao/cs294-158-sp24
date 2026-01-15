@@ -135,7 +135,6 @@ class IGPT(nn.Module):
                 num_heads: int,
                 d_ff: int,
                 max_seq_len: int,
-                image_shape=None,
                 device=None,
                 dtype=None,
                 ) -> None:
@@ -165,8 +164,6 @@ class IGPT(nn.Module):
 
         self.ln_final = LayerNorm(d_model=d_model, **factory_kwargs)
         self.lm_head = Linear(in_features=d_model, out_features=vocab_size, **factory_kwargs)
-        
-        self.image_shape = image_shape
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         _, sequence_length = x.size()
@@ -196,9 +193,9 @@ class IGPT(nn.Module):
         return F.cross_entropy(logits, targets) # ignore_index = -100
     
     @torch.no_grad()
-    def sample(self, n_samples: int, temperature=1.0) -> torch.Tensor:
+    def sample(self, n_samples: int, image_shape: tuple, temperature=1.0) -> torch.Tensor:
         device = next(self.parameters()).device
-        C, H, W = self.image_shape
+        C, H, W = image_shape
         total_pixels = C * H * W
 
         x = torch.zeros((n_samples, 1), dtype=torch.long, device=device)
