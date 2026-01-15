@@ -21,7 +21,7 @@ __all__ = [
 ]
 
 class GPT(nn.Module):
-    """"""
+    """TextGPT"""
     def __init__(self,
                 vocab_size: int,
                 context_length: int,
@@ -127,7 +127,7 @@ class GPT(nn.Module):
     
 
 class IGPT(nn.Module):
-    """"""
+    """ImageGPT"""
     def __init__(self,
                 vocab_size: int,
                 num_layers: int,
@@ -135,6 +135,7 @@ class IGPT(nn.Module):
                 num_heads: int,
                 d_ff: int,
                 max_seq_len: int,
+                image_shape=None,
                 device=None,
                 dtype=None,
                 ) -> None:
@@ -164,6 +165,8 @@ class IGPT(nn.Module):
 
         self.ln_final = LayerNorm(d_model=d_model, **factory_kwargs)
         self.lm_head = Linear(in_features=d_model, out_features=vocab_size, **factory_kwargs)
+        
+        self.image_shape = image_shape
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         _, sequence_length = x.size()
@@ -193,9 +196,9 @@ class IGPT(nn.Module):
         return F.cross_entropy(logits, targets) # ignore_index = -100
     
     @torch.no_grad()
-    def sample(self, n_samples: int, image_shape: tuple, temperature=1.0) -> torch.Tensor:
+    def sample(self, n_samples: int, temperature=1.0) -> torch.Tensor:
         device = next(self.parameters()).device
-        C, H, W = image_shape
+        C, H, W = self.image_shape
         total_pixels = C * H * W
 
         x = torch.zeros((n_samples, 1), dtype=torch.long, device=device)
@@ -220,8 +223,17 @@ class IGPT(nn.Module):
 
 
 class MMGPT(nn.Module):
-    """Multimodal Transformer"""
-    def __init__(self) -> None:
+    """Multimodal GPT"""
+    def __init__(self,
+                 image_shape,
+                 n_colors,
+                 vocab_size,
+                 context_length,
+                 d_model, 
+                 num_heads,
+                 d_ff,
+                 kernel_size = 7,
+                 ) -> None:
         super().__init__()
         raise NotImplementedError
         
