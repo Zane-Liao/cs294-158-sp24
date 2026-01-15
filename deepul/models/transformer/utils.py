@@ -216,7 +216,7 @@ class IGPT(nn.Module):
         
         output_image = output_seq.view(n_samples, H, W, C)
 
-        return output_image.permute(0, 3, 1, 2)
+        return output_image.float()
 
 
 class MMGPT(nn.Module):
