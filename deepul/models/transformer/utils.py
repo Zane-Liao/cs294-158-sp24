@@ -69,10 +69,61 @@ class GPT(nn.Module):
         return self.lm_head(x)
     
     def loss(self, x: torch.Tensor) -> torch.Tensor:
-        raise NotImplementedError
+        x = x.to(next(self.parameters()).device)
+        
+        nll = F.cross_entropy(self(x[:, :-1]), x[:, 1:], reduction='none')
+        mask = (x[:, :-1] != self.eos_ind).float()
+        masked_nll = nll * mask
+        loss = masked_nll.sum() / mask.sum()
+        return loss
     
-    def sample(self) -> torch.Tensor:
-        raise NotImplementedError
+    def sample(self,
+        x: torch.Tensor,
+        max_new_tokens: int,
+        temperature: float = 1.0,
+        top_k: int | None = None,
+        eos_token_id: int | None = None,) -> torch.Tensor:
+        if x.dim() == 1:
+            x = x.unsqueeze(0)
+            
+        original_sequence_length = x.size(-1)
+
+        for _ in range(max_new_tokens):
+
+            # Take the last `context_length` tokens if the input is
+            # beyond the model's context length
+            x = x[:, -self.context_length :] if x.size(1) > self.context_length else x
+
+            # Get the logits from the model
+            logits = self.forward(x)
+
+            # Take the logits for the next token
+            next_token_logits = logits[:, -1]
+
+            # apply temperature scaling
+            temperature_scaled_next_token_logits = next_token_logits / temperature
+
+            # If top-k is provided, take the tokens with the highest score
+            if top_k:
+                topk_values, _ = torch.topk(
+                    temperature_scaled_next_token_logits,
+                    min(top_k, temperature_scaled_next_token_logits.size(-1)),
+                )
+
+                # Get the score of the kth item that we kept---items with lower scores should be masked.
+                threshold = topk_values[:, -1]
+                topk_mask = temperature_scaled_next_token_logits < threshold
+                temperature_scaled_next_token_logits.masked_fill(topk_mask, float("-inf"))
+            next_token_probabilities = F.softmax(temperature_scaled_next_token_logits, dim=-1)
+            next_token_id = torch.multinomial(next_token_probabilities, 1)
+
+            # End generation if we see the EOS token ID
+            if eos_token_id is not None and next_token_id.item() == eos_token_id:
+                break
+            x = torch.cat((x, next_token_id), dim=-1)
+
+        new_token_ids = x[:, original_sequence_length:]
+        return new_token_ids
     
 
 class IGPT(nn.Module):
