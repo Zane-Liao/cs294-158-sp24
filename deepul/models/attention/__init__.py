@@ -1,6 +1,7 @@
 __all__ = [
     "RotaryCausalSelfAttention",
     "CausalSelfAttention",
+    "MultimodalCausalSelfAttention",
     "LinearAttention",
     "MultiHeadAttention",
 ]
@@ -8,6 +9,7 @@ __all__ = [
 from .utils import (
     RotaryCausalSelfAttention,
     CausalSelfAttention,
+    MultimodalCausalSelfAttention,
     LinearAttention,
     MultiHeadAttention
 )

@@ -8,6 +8,7 @@ import torch.nn as nn
 import torch.optim as optim
 
 from deepul.models.vae.vqvae import VQVAE
+from deepul.models.nlp_tokenizer.utils import WordEncoder, Tokenizer
 
 from .utils import (
     get_data_dir,
@@ -344,11 +345,27 @@ def q3c_save_results(dset_type, fn):
 
 # load vqvae mode
 def load_pretrain_vqvae(name: str):
+    device = torch.device(
+        "cuda" if torch.cuda.is_available() else "cpu"
+    )
+
     data_dir = get_data_dir(1)
-    loaded_args = torch.load(join(data_dir, f"vqvae_args_{name}_ft" + ".pth"))
-    vqvae = VQVAE(**loaded_args)
-    vqvae.load_state_dict(torch.load(join(data_dir, f"vqvae_{name}_ft" + ".pth")))
+
+    loaded_args = torch.load(
+        join(data_dir, f"vqvae_args_{name}_ft.pth"),
+        map_location=device
+    )
+
+    vqvae = VQVAE(**loaded_args).to(device)
+
+    state_dict = torch.load(
+        join(data_dir, f"vqvae_{name}_ft.pth"),
+        map_location=device
+    )
+    vqvae.load_state_dict(state_dict)
+
     return vqvae
+
 
 
 def q4a_save_results(dset_type, fn):
@@ -499,6 +516,7 @@ def q6a_save_results(fn):
     train_data, test_data, train_labels, test_labels = load_colored_mnist_text(
         join(data_dir, "colored_mnist_with_text.pkl")
     )
+    encoder = WordEncoder(train_labels+test_labels)
     vqvae = load_pretrain_vqvae("colored_mnist_2")
     img_shape = (28, 28, 3)
     # extract out the images only
@@ -513,12 +531,13 @@ def q6a_save_results(fn):
     ) = fn(
         train_data,
         test_data,
-        img_shape,
         train_labels,
         test_labels,
         img_test_prompt,
         text_test_prompt,
         vqvae,
+        encoder,
+        n_samples=9
     )
 
     print(f"Final Test Loss: {test_losses[-1]:.4f}")

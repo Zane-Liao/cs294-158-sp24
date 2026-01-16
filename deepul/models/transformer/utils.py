@@ -3,11 +3,11 @@ from einops import einsum, rearrange
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from typing import Any, Iterable, Optional, Tuple, Union
+from typing import Any, Iterable, Literal, Optional, Tuple, Union
 
 from jaxtyping import Float, Int
 
-from deepul.models.attention.utils import RotaryCausalSelfAttention, CausalSelfAttention
+from deepul.models.attention.utils import RotaryCausalSelfAttention, CausalSelfAttention, MultimodalCausalSelfAttention
 from deepul.models.modules.layers import Linear, Embedding, LayerNorm, FFN, RMSNorm, SwiGLU, PositionalEncoding1D
 import numpy as np
 import numpy.typing as npt
@@ -149,6 +149,8 @@ class IGPT(nn.Module):
         self.max_seq_len = max_seq_len
         
         self.embedding = Embedding(num_embeddings=vocab_size, embedding_dim=d_model, **factory_kwargs)
+        
+        self.pos = nn.Parameter(torch.zeros(1, self.max_seq_len, d_model))
 
         self.layers = nn.ModuleList(
             [
@@ -166,9 +168,9 @@ class IGPT(nn.Module):
         self.lm_head = Linear(in_features=d_model, out_features=vocab_size, **factory_kwargs)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        _, sequence_length = x.size()
-
         x = self.embedding(x)
+        
+        x = x + self.pos[:, :x.size(1)]
         
         for layer in self.layers:
             x = layer(x)
@@ -222,16 +224,22 @@ class IGPT(nn.Module):
 class MMGPT(nn.Module):
     """Multimodal GPT"""
     def __init__(self,
-                 image_shape,
-                 n_colors,
-                 vocab_size,
-                 context_length,
-                 d_model, 
-                 num_heads,
-                 d_ff,
-                 kernel_size = 7,
+                 image_shape: tuple[Literal[20], Literal[20], Literal[1, 3]] | tuple[Literal[28], Literal[28], Literal[1, 3]],
+                 n_colors: int,
+                 vocab_size: int,
+                 context_length: int,
+                 d_model: int, 
+                 num_heads: int,
+                 kernel_size: int = 7,
                  ) -> None:
         super().__init__()
+        self.image_shape = image_shape
+        
+        self.mmgpt_block = MMGPTBlock(
+            d_model=d_model,
+            num_heads=num_heads,
+            n_dims=1,
+        )
         raise NotImplementedError
         
     def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -320,6 +328,41 @@ class IGPTBlock(nn.Module):
         
         return y + self.ff(self.layer_norm2(y))
 
+
+class MMGPTBlock(nn.Module):
+    def __init__(self,
+                 d_model: int = 128,
+                 num_heads: int = 4,
+                 n_dims: int = 1,
+                 device=None,
+                 dtype=None,
+                 ) -> None:
+        factory_kwargs = {"device": device, "dtype": dtype}
+        super().__init__()
+        self._self_attn = MultimodalCausalSelfAttention(
+            in_channels=d_model,
+            embed_channels=d_model,
+            out_channels=d_model,
+            num_heads=num_heads,
+            n_dims=n_dims,
+            **factory_kwargs,
+        )
+        
+        mod = nn.Conv1d if n_dims == 1 else nn.Conv2d if n_dims == 2 else nn.Conv3d
+        self._ff = nn.Sequential(
+            mod(d_model, int(4.*d_model), 1, 1, 0),
+            nn.GELU(),
+            mod(int(4.*d_model), d_model, 1, 1, 0)
+        )
+        
+        self._layer_norm = nn.LayerNorm(d_model, **factory_kwargs)
+        
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        attn_output = self._self_attn(x)
+        
+        y = x + attn_output
+        
+        return y + self._ff(self._layer_norm(y))
 
 def compute_lr(t, alpha_max, alpha_min, t_w, t_c) -> (Any | None):
     if t < t_w:

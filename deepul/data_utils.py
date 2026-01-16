@@ -1,13 +1,17 @@
 # Some credits: https://github.com/yulun-rayn/CS294-158/blob/main/deepul/data/utils.py
 import random
+from collections import OrderedDict
 import numpy as np
 import torch
 from torch.utils.data import DataLoader
+from torch.nn.utils.rnn import pad_sequence
 
 __all__ = [
     "IntDataLoader",
     "ImageDataLoader",
     "NCHWDataLoader",
+    "batch_tensor_apply",
+    "MultimodalDataset",
 ]
 
 class IntDataLoader:
