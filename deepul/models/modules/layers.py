@@ -1,4 +1,5 @@
 import math
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -7,7 +8,7 @@ from einops import einsum, rearrange
 
 __all__ = [
     "MaskedConv2d",
-    "Residualblock",
+    "MaskedResidualblock",
     "RotaryPositionalEmbedding",
     "Linear",
     "Embedding",
@@ -17,6 +18,20 @@ __all__ = [
     "FFN",
     "PositionalEncoding1D",
     "LayerNorm",
+    "RotaryCausalSelfAttention",
+    "CausalSelfAttention",
+    "MultimodalCausalSelfAttention",
+    "DepthToSpace",
+    "SpaceToDepth",
+    "Attention",
+    "LinearAttention",
+    "MLP",
+    "FeedForward",
+    "TimeEmbedding",
+    "UpSample",
+    "DownSample",
+    "ResidualBlock",
+    "FinalLayer",
 ]
 
 class MaskedConv2d(nn.Conv2d):
@@ -96,7 +111,8 @@ class MaskedConv2d(nn.Conv2d):
         return F.conv2d(x, weight, self.bias, self.stride, self.padding, self.dilation, self.groups)
     
 
-class Residualblock(nn.Module):
+class MaskedResidualblock(nn.Module):
+    """"""
     def __init__(self, channels: int, kernel_size: int = 7, _layer_norm: bool = True) -> None:
         super().__init__()
         pad = kernel_size // 2
@@ -222,8 +238,8 @@ class Embedding(nn.Module):
 
 
 class RotaryPositionalEmbedding(nn.Module):
+    """"""
     def __init__(self, theta: float, d_k: int, max_seq_len: int, device=None) -> None:
-        """"""
         super().__init__()
         half_dim = d_k // 2
         self.theta = (1. / theta ** (torch.arange(0, half_dim, device=device) / half_dim))
@@ -235,7 +251,6 @@ class RotaryPositionalEmbedding(nn.Module):
         self.register_buffer("cos", torch.cos(angle_max_seq_len), persistent=False)
     
     def forward(self, x: torch.Tensor, token_positions: torch.Tensor) -> torch.Tensor:
-        """"""
         sin = self.sin[token_positions]
         cos = self.cos[token_positions]
         
@@ -267,8 +282,8 @@ def silu(x: torch.Tensor) -> torch.Tensor:
 
 
 class RMSNorm(nn.Module):
+    """"""
     def __init__(self, d_model: int, eps: float = 1e-5, device=None, dtype=None) -> None:
-        """"""
         factory_kwargs = {"device": device, "dtype": dtype}
         super().__init__()
         self.eps = eps
@@ -278,7 +293,6 @@ class RMSNorm(nn.Module):
         return x * torch.rsqrt(torch.mean(x * x, dim=-1, keepdim=True) + self.eps)
     
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """"""
         # In torch, x.float() => float32
         output = self._norm(x.float()).type_as(x)
         return output * self.weight
@@ -353,3 +367,312 @@ class LayerNorm(nn.Module):
         x_bar = (x - mean) / torch.sqrt(var + self.eps)
         
         return self.gamma * x_bar + self.beta
+    
+
+class RotaryCausalSelfAttention(nn.Module):
+    """"""
+    def __init__(self,
+                 d_model: int,
+                 num_heads: int,
+                 theta: float | None = None,
+                 max_seq_len: int | None = None,
+                 rope_exist: bool | None = None,
+                 device=None,
+                 dtype=None,
+            ) -> None:
+        factory_kwargs = {"device": device, "dtype": dtype}
+        super().__init__()
+        self.d_model = d_model
+        self.num_heads = num_heads
+        self.d_k = d_model // num_heads
+
+        self.qkv_proj = Linear(d_model, 3 * d_model, **factory_kwargs)
+        self.o_proj = Linear(d_model, d_model, **factory_kwargs)
+        
+        self.rope_exist = rope_exist
+        if self.rope_exist:
+            self.rope = RotaryPositionalEmbedding(
+                theta=theta,
+                d_k=self.d_k,
+                max_seq_len=max_seq_len,
+                device=device
+            )
+        else:
+            self.rope = None
+
+    def forward(self,
+                in_features: torch.Tensor,
+                token_positions: Optional[torch.Tensor] = None,
+               ) -> torch.Tensor:
+        
+        batch_size, seq_len, _ = in_features.shape
+
+        qkv = self.qkv_proj(in_features)
+        q, k, v = qkv.chunk(3, dim=-1)
+        
+        q = rearrange(q, "b t (h d) -> b h t d", h=self.num_heads)
+        k = rearrange(k, "b t (h d) -> b h t d", h=self.num_heads)
+        v = rearrange(v, "b t (h d) -> b h t d", h=self.num_heads)
+
+        if self.rope_exist:
+            if token_positions is None:
+                raise ValueError("token_positions must be provided when use_rope is True.")
+            q = self.rope(q, token_positions)
+            k = self.rope(k, token_positions)
+        
+        output = F.scaled_dot_product_attention(q, k, v, is_causal=True)
+        
+        return self.o_proj(rearrange(output, "b h t d -> b t (h d)"))
+    
+    
+class CausalSelfAttention(nn.Module):
+    """"""
+    def __init__(self,
+                 d_model: int,
+                 num_heads: int,
+                 device=None,
+                 dtype=None,
+                 ) -> None:
+        factory_kwargs = {"device": device, "dtype": dtype}
+        super().__init__()
+        
+        self.d_model = d_model
+        self.num_heads = num_heads
+        
+        self.d_k = d_model // num_heads
+        
+        self.qkv_proj = nn.Linear(d_model, 3*d_model, **factory_kwargs)
+        self.o_proj = nn.Linear(d_model, d_model, **factory_kwargs)
+        
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        qkv = self.qkv_proj(x)
+        q, k, v = qkv.chunk(3, dim=-1)
+        
+        q = rearrange(q, "b t (h d) -> b h t d", h=self.num_heads)
+        k = rearrange(k, "b t (h d) -> b h t d", h=self.num_heads)
+        v = rearrange(v, "b t (h d) -> b h t d", h=self.num_heads)
+        
+        output = F.scaled_dot_product_attention(q, k, v, is_causal=True)
+        
+        return self.o_proj(rearrange(output, "b h t d -> b t (h d)"))
+
+
+class MultimodalCausalSelfAttention(nn.Module):
+    """1D/2D/3D Space AR"""
+    def __init__(
+        self,
+        in_channels: int,
+        embed_channels: int = None,
+        out_channels: int = None,
+        num_heads: int = 1,
+        n_dims: int = 2,
+        mask_current: bool = True,
+        extra_input_channels: int = 0,
+        device=None,
+        dtype=None,
+    ) -> None:
+        factory_kwargs = {"device": device, "dtype": dtype}
+        super().__init__()
+        
+        self.n_dims = n_dims
+        self._num_heads = num_heads
+        self._mask_current = mask_current
+        
+        self._embed_channels = embed_channels or in_channels
+        self._out_channels = out_channels or in_channels
+
+        assert self._embed_channels % num_heads == 0, \
+            f"embed_channels ({self._embed_channels}) must be divisible by num_heads ({num_heads})"
+        assert self._out_channels % num_heads == 0, \
+            f"out_channels ({self._out_channels}) must be divisible by num_heads ({num_heads})"
+        
+        self.head_dim_q = self._embed_channels // num_heads
+        self.head_dim_v = self._out_channels // num_heads
+
+        mod = nn.Conv1d if n_dims == 1 else nn.Conv2d if n_dims == 2 else nn.Conv3d
+        
+        self._q = mod(in_channels, self._embed_channels, 1, 1, 0, **factory_kwargs)
+
+        total_in_channels = in_channels + extra_input_channels
+        total_out_channels = self._embed_channels + self._out_channels
+        self._kv = mod(total_in_channels, total_out_channels, 1, 1, 0, **factory_kwargs)
+        
+        # Output Projection
+        self._o_proj = mod(self._out_channels, self._out_channels, 1, 1, 0, **factory_kwargs)
+
+    def _flatten_spatial(self, t):
+        return rearrange(t, 'n c ... -> n c (...)')
+
+    def forward(self, x: torch.Tensor, extra_x: torch.Tensor = None, pos: torch.Tensor = None) -> torch.Tensor:
+        b, c, *spatial_shape = x.shape
+        L_query = np.prod(spatial_shape)
+
+        q_input = x 
+        if pos is not None:
+            q_input = q_input + pos
+            
+        q = self._q(q_input)
+        q = self._flatten_spatial(q)
+        q = rearrange(q, 'b (h d) l -> b h l d', h=self._num_heads)
+
+        if extra_x is not None:
+            kv_input = torch.cat([x, extra_x], dim=1)
+        else:
+            kv_input = x
+            
+        kv = self._kv(kv_input)
+        k_raw, v_raw = torch.split(kv, [self._embed_channels, self._out_channels], dim=1)
+        
+        if pos is not None:
+            k_raw = k_raw + pos 
+
+        k = self._flatten_spatial(k_raw)
+        v = self._flatten_spatial(v_raw)
+        
+        k = rearrange(k, 'b (h d) s -> b h s d', h=self._num_heads)
+        v = rearrange(v, 'b (h d) s -> b h s d', h=self._num_heads)
+
+        S_key = L_query 
+        diag_val = 0 if self._mask_current else -1
+        attn_mask = torch.ones((L_query, S_key), device=x.device, dtype=torch.bool)
+        attn_mask = torch.tril(attn_mask, diagonal=diag_val)
+        
+        out = F.scaled_dot_product_attention(
+            q, k, v, 
+            attn_mask=attn_mask, 
+            dropout_p=0.0, 
+            is_causal=False
+        )
+        out = rearrange(out, 'b h l d -> b (h d) l')
+
+        spatial_dict = {f'd{i}': s for i, s in enumerate(spatial_shape)}
+        if self.n_dims == 1:
+            out = rearrange(out, 'b c (d0) -> b c d0', **spatial_dict)
+        elif self.n_dims == 2:
+            out = rearrange(out, 'b c (d0 d1) -> b c d0 d1', **spatial_dict)
+        elif self.n_dims == 3:
+            out = rearrange(out, 'b c (d0 d1 d2) -> b c d0 d1 d2', **spatial_dict)
+            
+        return self._o_proj(out)
+    
+
+class DepthToSpace(nn.Module):
+    def __init__(self, block_size):
+        super().__init__()
+        self.block_size = block_size
+        self.block_size_sq = block_size * block_size
+
+    def forward(self, input):
+        output = input.permute(0, 2, 3, 1)
+        (batch_size, d_height, d_width, d_depth) = output.size()
+        s_depth = int(d_depth / self.block_size_sq)
+        s_width = int(d_width * self.block_size)
+        s_height = int(d_height * self.block_size)
+        t_1 = output.reshape(batch_size, d_height, d_width, self.block_size_sq, s_depth)
+        spl = t_1.split(self.block_size, 3)
+        stack = [t_t.reshape(batch_size, d_height, s_width, s_depth) for t_t in spl]
+        output = torch.stack(stack, 0).transpose(0, 1).permute(0, 2, 1, 3, 4).reshape(batch_size, s_height, s_width,
+                                                                                      s_depth)
+        output = output.permute(0, 3, 1, 2)
+        return output
+    
+    
+class SpaceToDepth(nn.Module):
+    def __init__(self, block_size):
+        super().__init__()
+        self.block_size = block_size
+        self.block_size_sq = block_size * block_size
+
+    def forward(self, input):
+        output = input.permute(0, 2, 3, 1)
+        (batch_size, s_height, s_width, s_depth) = output.size()
+        d_depth = s_depth * self.block_size_sq
+        d_width = int(s_width / self.block_size)
+        d_height = int(s_height / self.block_size)
+        t_1 = output.split(self.block_size, 2)
+        stack = [t_t.reshape(batch_size, d_height, d_depth) for t_t in t_1]
+        output = torch.stack(stack, 1)
+        output = output.permute(0, 2, 1, 3)
+        output = output.permute(0, 3, 1, 2)
+        return output
+
+    
+class Attention(nn.Module):
+    """"""
+    def __init__(self) -> None:
+        super().__init__()
+        raise NotImplementedError
+        
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        raise NotImplementedError
+    
+
+class LinearAttention(nn.Module):
+    """"""
+    def __init__(self) -> None:
+        super().__init__()
+        raise NotImplementedError
+        
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        raise NotImplementedError
+    
+    
+class MLP(nn.Module):
+    def __init__(self) -> None:
+        super().__init__()
+        
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        raise NotImplementedError
+    
+
+class FeedForward(nn.Module):
+    """"""
+    def __init__(self) -> None:
+        super().__init__()
+        
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        raise NotImplementedError
+
+    
+class TimeEmbedding(nn.Module):
+    def __init__(self) -> None:
+        super().__init__()
+        
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        raise NotImplementedError
+
+
+class UpSample(nn.Module):
+    """"""
+    def __init__(self) -> None:
+        super().__init__()
+        
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        raise NotImplementedError
+
+
+class DownSample(nn.Module):
+    """"""
+    def __init__(self) -> None:
+        super().__init__()
+        
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        raise NotImplementedError
+
+
+class ResidualBlock(nn.Module):
+    """Given x, temb"""
+    def __init__(self) -> None:
+        super().__init__()
+        
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        raise NotImplementedError
+    
+
+class FinalLayer(nn.Module):
+    """"""
+    def __init__(self) -> None:
+        super().__init__()
+        
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        raise NotImplementedError

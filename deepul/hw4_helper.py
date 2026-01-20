@@ -1,8 +1,10 @@
 import os
 import numpy as np
 import matplotlib.pyplot as plt
+from typing import List, Tuple, Any
 import torch
 import torchvision
+import torch.nn as nn
 from sklearn.datasets import make_swiss_roll
 
 from deepul.models.vae import VAE
@@ -14,6 +16,33 @@ from .utils import (
     get_data_dir,
 )
 
+def _train_epoch_loop(
+    model: nn.Module,
+    train_loader: torch.utils.data.DataLoader,
+    _optimizer: torch.optim.Optimizer,
+    grad_clip=None,
+) -> List[Any]:
+    
+    raise NotImplementedError
+
+
+def _simple_test_func(
+    model: nn.Module,
+    test_loader: torch.utils.data.DataLoader,
+) -> float:
+    raise NotImplementedError
+
+
+def train_loop(
+    model: nn.Module,
+    train_loader: torch.utils.data.DataLoader,
+    test_loader: torch.utils.data.DataLoader,
+    lr: float,
+    eopoch_loop: int,
+    grad_clip: float | None = None,
+    _optimizer: torch.optim.Optimizer = torch.optim.AdamW,
+) -> Tuple[List[Any], List[Any]]:
+    raise NotImplementedError
 
 
 ######################

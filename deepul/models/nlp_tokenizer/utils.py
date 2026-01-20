@@ -7,6 +7,12 @@ from collections import Counter, defaultdict
 from multiprocessing import Process, Queue
 import regex as re
 
+
+__all__ = [
+    "Tokenizer",
+    "WordEncoder",
+]
+
 PAT_GPT2 = re.compile(r"""'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+""")
 PAT_SPECIAL_TOKEN = [
     '<|endoftext|>'
