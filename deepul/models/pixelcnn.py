@@ -3,7 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from typing import Optional, Tuple, Union
 
-from deepul.models.modules.layers import MaskedConv2d, Residualblock
+from deepul.models.modules.layers import MaskedConv2d, MaskedResidualblock, Residualblock
 
 __all__ = {
     "SimplePixelCNN",
@@ -88,7 +88,7 @@ class PixelCNN(nn.Module):
             'A', in_channels, n_filters, kernel_size=7, padding=pad_7, channel_conditioning=None
         )
         
-        self.res_block = nn.Sequential(*[Residualblock(n_filters, kernel_size=7, _layer_norm=True) for _ in range(n_res_blocks)])
+        self.res_block = nn.Sequential(*[MaskedResidualblock(n_filters, kernel_size=7, _layer_norm=True) for _ in range(n_res_blocks)])
         
         self.post_relu = nn.ReLU(inplace=True)
         

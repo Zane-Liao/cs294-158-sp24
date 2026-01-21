@@ -3,8 +3,14 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from typing import Optional, Tuple, Union
-from einops import einsum, rearrange
+from typing import Any, Optional, Tuple, Union
+from einops import einsum, rearrange, repeat
+
+from packaging import version
+from collections import namedtuple
+from functools import partial
+from torch.nn.attention import SDPBackend
+from deepul.hw3_utils.lpips import exists, default, once, print_once
 
 __all__ = [
     "MaskedConv2d",
@@ -23,6 +29,7 @@ __all__ = [
     "MultimodalCausalSelfAttention",
     "DepthToSpace",
     "SpaceToDepth",
+    "Attend",
     "Attention",
     "LinearAttention",
     "MLP",
@@ -30,8 +37,13 @@ __all__ = [
     "TimeEmbedding",
     "UpSample",
     "DownSample",
-    "ResidualBlock",
+    "Block",
+    "Residualblock",
     "FinalLayer",
+    "RMSNorm2d",
+    "RMSNormConv",
+    "SinusoidalPosEmb",
+    "RandomOrLearnedSinusoidalPosEmb",
 ]
 
 class MaskedConv2d(nn.Conv2d):
@@ -407,12 +419,8 @@ class RotaryCausalSelfAttention(nn.Module):
         
         batch_size, seq_len, _ = in_features.shape
 
-        qkv = self.qkv_proj(in_features)
-        q, k, v = qkv.chunk(3, dim=-1)
-        
-        q = rearrange(q, "b t (h d) -> b h t d", h=self.num_heads)
-        k = rearrange(k, "b t (h d) -> b h t d", h=self.num_heads)
-        v = rearrange(v, "b t (h d) -> b h t d", h=self.num_heads)
+        qkv = self.qkv_proj(in_features).chunk(3, dim=-1)
+        q, k, v = map(lambda t: rearrange(t, "b t (h d) -> b h t d", h=self.num_heads), qkv)
 
         if self.rope_exist:
             if token_positions is None:
@@ -445,12 +453,8 @@ class CausalSelfAttention(nn.Module):
         self.o_proj = nn.Linear(d_model, d_model, **factory_kwargs)
         
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        qkv = self.qkv_proj(x)
-        q, k, v = qkv.chunk(3, dim=-1)
-        
-        q = rearrange(q, "b t (h d) -> b h t d", h=self.num_heads)
-        k = rearrange(k, "b t (h d) -> b h t d", h=self.num_heads)
-        v = rearrange(v, "b t (h d) -> b h t d", h=self.num_heads)
+        qkv = self.qkv_proj(x).chunk(3, dim=-1)
+        q, k, v = map(lambda t: rearrange(t, "b t (h d) -> b h t d", h=self.num_heads), qkv)
         
         output = F.scaled_dot_product_attention(q, k, v, is_causal=True)
         
@@ -596,33 +600,194 @@ class SpaceToDepth(nn.Module):
         output = output.permute(0, 3, 1, 2)
         return output
 
-    
+
+AttentionConfig = namedtuple('AttentionConfig', ['backends'])
+
+# credits: https://github.com/lucidrains/denoising-diffusion-pytorch/blob/main/denoising_diffusion_pytorch/attend.py
+class Attend(nn.Module):
+    """"""
+    def __init__(
+        self,
+        dropout = 0.,
+        flash = False,
+        scale = None,
+        ) -> None:
+        super().__init__()
+        self.dropout = dropout
+        self.scale = scale
+        self.attn_dropout = nn.Dropout(dropout)
+        
+        self.flash = flash
+        assert not (flash and version.parse(torch.__version__)) < version.parse('2.0.0'), "in order to use flash attention, you must be using pytorch 2.0 or above"
+        
+        # determine efficient attention configs for cuda and cpu
+        
+        self.cpu_config = AttentionConfig([SDPBackend.FLASH_ATTENTION, SDPBackend.MATH, SDPBackend.EFFICIENT_ATTENTION])
+        self.cuda_config = None
+        
+        if not torch.cuda.is_available() or not flash:
+            return
+        
+        device_properties = torch.cuda.get_device_properties(torch.device('cuda'))
+
+        device_version = version.parse(f'{device_properties.major}.{device_properties.minor}')
+        
+        if device_version > version.parse('8.0'):
+            print_once('A100 GPU detected, using flash attention if input tensor is on cuda')
+            self.cuda_config = AttentionConfig([SDPBackend.FLASH_ATTENTION])
+        else:
+            print_once('Non-A100 GPU detected, using math or mem efficient attention if input tensor is on cuda')
+            self.cuda_config = AttentionConfig([SDPBackend.MATH, SDPBackend.EFFICIENT_ATTENTION])
+            
+    def flash_attn(self, q: torch.Tensor, k: torch.Tensor, v: torch.Tensor) -> torch.Tensor:
+        _, heads, q_len, _, k_len, is_cuda, device = *q.shape, k.shape[-2], q.is_cuda, q.device
+        
+        if exists(self.scale):
+            default_scale = q.shape[-1]
+            q = q * (self.scale / default_scale)
+        
+        q, k, v = map(lambda t: t.contiguous(), (q, k, v))
+        
+        # Check if there is a compatible device for flash attention
+
+        config = self.cuda_config if is_cuda else self.cpu_config
+
+        # pytorch 2.0 flash attn: q, k, v, mask, dropout, causal, softmax_scale
+        
+        with torch.nn.attention.sdpa_kernel(**config._asdict()):
+            out = F.scaled_dot_product_attention(
+                q, k, v,
+                dropout_p=self.dropout if self.training else 0
+            )
+        
+        return out
+
+    def forward(self, q: torch.Tensor, k: torch.Tensor, v: torch.Tensor) -> torch.Tensor:
+        """
+        einstein notation
+        b - batch
+        h - heads
+        n, i, j - sequence length (base sequence length, source, target)
+        d - feature dimension
+        """
+        q_len, k_len, device = q.shape[-2], k.shape[-2], q.device
+        
+        if self.flash:
+            return self.flash_attn(q, k, v)
+
+        scale = default(self.scale, q.shape[-1] ** 0.5)
+        
+        # similarity
+        
+        sim = einsum(q, k, "b h i d, b h j d -> b h i j") * scale
+        
+        # attention
+        
+        attn = sim.softmax(dim=-1)
+        attn = self.attn_dropout(attn)
+        
+        return einsum(attn, v, "b h i j, b h j d -> b h i d")
+
+
 class Attention(nn.Module):
     """"""
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        dim, 
+        heads = 4,
+        dim_head = 32,
+        num_mem_kv = 4,
+        flash = False,
+        ) -> None:
         super().__init__()
-        raise NotImplementedError
+        self.heads = heads
+        hidden_dim = dim_head * heads
+        
+        self.norm = RMSNormConv(dim)
+        self.attend = Attend(flash=flash)
+        
+        self.mem_kv = nn.Parameter(torch.randn(2, heads, num_mem_kv, dim_head))
+        self.to_qkv = nn.Conv2d(dim, hidden_dim * 3, 1, bias=False)
+        self.to_out = nn.Conv2d(hidden_dim, dim, 1)
         
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        raise NotImplementedError
+        b, c, h, w = x.shape
     
+        x = self.norm(x)
+        
+        qkv = self.to_qkv(x).chunk(3, dim=1)
+        q, k, v = map(lambda t: rearrange(t, "b (h c) x y -> b h (x y) c", h=self.heads), qkv)
+        
+        mk, mv = map(lambda t: repeat(t, "h n d -> b h n d", b=b), self.mem_kv)
+        k, v = map(partial(torch.cat, dim=-2), ((mk, k), (mv, v)))
+        
+        out = self.attend(q, k, v)
+        
+        return self.to_out(rearrange(out, "b h (x y) d -> b (h d) x y", x=h, y=w))
+
 
 class LinearAttention(nn.Module):
     """"""
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        dim, 
+        heads = 4,
+        dim_head = 32,
+        num_mem_kv = 4,
+        ) -> None:
         super().__init__()
-        raise NotImplementedError
+        self.scale = dim_head * -0.5
+        self.heads = heads
+        hidden_dim = dim_head * heads
+        
+        self.norm = RMSNormConv(dim)
+        self.mem_kv = nn.Parameter(torch.randn(2, heads, num_mem_kv, dim_head))
+        self.to_qkv = nn.Conv2d(dim, hidden_dim * 3, 1, bias=False)
+        
+        self.to_out = nn.Sequential(
+            nn.Conv2d(hidden_dim, dim, 1),
+            RMSNormConv(dim)
+        )
         
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        raise NotImplementedError
+        b, c, h, w = x.shape
+        
+        x = self.norm(x)
+        
+        qkv = self.to_qkv(x).chunk(3, dim=1)
+        q, k, v = map(lambda t: rearrange(t, "b (h c) x y -> b h c (x y)", h=self.heads), qkv)
+        
+        mk, mv = map(lambda t: repeat(t, "h c n -> b h c n", b=b), self.mem_kv)
+        k, v = map(partial(torch.cat, dim=-1), ((mk, k), (mv, v)))
+        
+        q = q.softmax(dim=-2)
+        k = k.softmax(dim=-1)
+        
+        q = q * self.scale
+        
+        context = einsum(k, v, "b h d n, b h e n -> b h d e")
+        out = einsum(context, q, "b h d e, b h d n -> b h e n")
+        
+        return self.to_out(rearrange(out, "b h c (x y) -> b (h c) x y", h=self.heads, x=h, y=w))
     
     
 class MLP(nn.Module):
-    def __init__(self) -> None:
+    def __init__(self, in_dim, hid_dim, out_dim) -> None:
         super().__init__()
+        self.net = nn.Sequential(
+            nn.Linear(in_dim, hid_dim),
+            nn.ReLU(),
+            nn.Linear(hid_dim, hid_dim),
+            nn.ReLU(),
+            nn.Linear(hid_dim, hid_dim),
+            nn.ReLU(),
+            nn.Linear(hid_dim, hid_dim),
+            nn.ReLU(),
+            nn.Linear(hid_dim, out_dim),
+        )
         
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        raise NotImplementedError
+    def forward(self, x: torch.Tensor, t: torch.Tensor) -> torch.Tensor:
+        return self.net(torch.cat([x, t], dim=-1))
     
 
 class FeedForward(nn.Module):
@@ -635,11 +800,13 @@ class FeedForward(nn.Module):
 
     
 class TimeEmbedding(nn.Module):
-    def __init__(self) -> None:
+    def __init__(self, n_out: int, t_emb_dim: 128) -> None:
         super().__init__()
         
+        self.te_block = nn.Sequential(nn.SiLU, nn.Linear(t_emb_dim, n_out))
+    
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        raise NotImplementedError
+        return self.te_block(x)
 
 
 class UpSample(nn.Module):
@@ -660,7 +827,16 @@ class DownSample(nn.Module):
         raise NotImplementedError
 
 
-class ResidualBlock(nn.Module):
+class Block(nn.Module):
+    """"""
+    def __init__(self) -> None:
+        super().__init__()
+        
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        raise NotImplementedError
+
+
+class Residualblock(nn.Module):
     """Given x, temb"""
     def __init__(self) -> None:
         super().__init__()
@@ -670,6 +846,46 @@ class ResidualBlock(nn.Module):
     
 
 class FinalLayer(nn.Module):
+    """"""
+    def __init__(self) -> None:
+        super().__init__()
+        
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        raise NotImplementedError
+    
+
+class RMSNorm2d(nn.Module):
+    """"""
+    def __init__(self, dim, eps=1e-8) -> None:
+        super().__init__()
+        self.g = nn.Parameter(torch.ones(1, dim, 1, 1))
+        self.eps = eps
+    
+    @torch.compile
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        rms = torch.mean(x ** 2, dim=1, keepdim=True)
+        return x * torch.rsqrt(rms + self.eps) * self.g
+    
+    
+class RMSNormConv(nn.Module):
+    def __init__(self, dim, n_dims=2):
+        super().__init__()
+        self.g = nn.Parameter(torch.ones(1, dim, *[1]*n_dims))
+
+    def forward(self, x):
+        return F.normalize(x, dim=1) * self.g * (x.shape[1] ** 0.5)
+    
+    
+class SinusoidalPosEmb(nn.Module):
+    """"""
+    def __init__(self) -> None:
+        super().__init__()
+        
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        raise NotImplementedError
+    
+    
+class RandomOrLearnedSinusoidalPosEmb(nn.Module):
     """"""
     def __init__(self) -> None:
         super().__init__()

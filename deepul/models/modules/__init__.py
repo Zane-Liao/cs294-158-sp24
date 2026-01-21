@@ -15,6 +15,7 @@ __all__ = [
     "MultimodalCausalSelfAttention",
     "DepthToSpace",
     "SpaceToDepth",
+    "Attend",
     "Attention",
     "LinearAttention",
     "MLP",
@@ -22,8 +23,13 @@ __all__ = [
     "TimeEmbedding",
     "UpSample",
     "DownSample",
-    "ResidualBlock",
+    "Block",
+    "Residualblock",
     "FinalLayer",
+    "RMSNorm2d",
+    "RMSNormConv",
+    "SinusoidalPosEmb",
+    "RandomOrLearnedSinusoidalPosEmb",
 ]
 
 from .layers import (
@@ -43,6 +49,7 @@ from .layers import (
     MultimodalCausalSelfAttention,
     DepthToSpace,
     SpaceToDepth,
+    Attend,
     Attention,
     LinearAttention,
     MLP,
@@ -50,6 +57,11 @@ from .layers import (
     TimeEmbedding,
     UpSample,
     DownSample,
-    ResidualBlock,
+    Block,
+    Residualblock,
     FinalLayer,
+    RMSNorm2d,
+    RMSNormConv,
+    SinusoidalPosEmb,
+    RandomOrLearnedSinusoidalPosEmb,
 )

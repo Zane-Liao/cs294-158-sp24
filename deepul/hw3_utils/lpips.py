@@ -13,12 +13,32 @@ import torch.nn as nn
 from torchvision import models
 from tqdm import tqdm
 
+from functools import wraps
+
 URL_MAP = {"vgg_lpips": "https://heibox.uni-heidelberg.de/f/607503859c864bc1b30b/?dl=1"}
 
 CKPT_MAP = {"vgg_lpips": "vgg.pth"}
 
 MD5_MAP = {"vgg_lpips": "d507d7349b931f0638a25a48a722f98a"}
 
+def exists(val):
+    return val is not None
+
+def default(val, d):
+    return val if exists(val) else d
+
+def once(fn):
+    called = False
+    @wraps(fn)
+    def inner(x):
+        nonlocal called
+        if called:
+            return
+        called = True
+        return fn(x)
+    return inner
+
+print_once = once(print)
 
 def download(url, local_path, chunk_size=1024):
     os.makedirs(os.path.split(local_path)[0], exist_ok=True)

@@ -17,6 +17,7 @@ __all__ = [
     "MMGPT",
     "compute_lr",
     "gradient_cliping",
+    "get_batch",
 ]
 
 class GPT(nn.Module):

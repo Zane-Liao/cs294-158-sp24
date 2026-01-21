@@ -10,6 +10,7 @@ from jaxtyping import Float, Int
 from deepul.models.modules.layers import *
 import numpy as np
 import numpy.typing as npt
+from deepul.hw3_utils.lpips import exists, default, once, print_once
 
 
 __all__ = [
@@ -53,8 +54,38 @@ class ViTBlock(nn.Module):
 
 
 class UNet(nn.Module):
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        dim,
+        init_dim = None,
+        out_dim = None,
+        dim_mults = (1, 2, 4, 8),
+        channels = 3,
+        self_condition = False,
+        learned_variance = False,
+        learned_sinusoidal_cond = False,
+        random_fourier_features = False,
+        learned_sinusoidal_dim = 16,
+        sinusoidal_pos_emb_theta = 10000,
+        dropout = 0.,
+        attn_dim_head = 32,
+        attn_heads = 4,
+        full_attn = None,
+        flash_attn = False,
+        ) -> None:
         super().__init__()
+        
+        # determine dimensions
+        
+        self.channels = channels
+        self.self_condition = self_condition
+        input_channels = channels * (2 if self_condition else 1)
+        
+        init_dim = default(init_dim, dim)
+        self.init_conv = nn.Conv2d(input_channels, init_dim, 7, padding=3)
+        
+        time_dim = dim * 4
+        
         
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         raise NotImplementedError

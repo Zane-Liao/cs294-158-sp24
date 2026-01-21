@@ -4,6 +4,7 @@ __all__ = [
     "MMGPT",
     "compute_lr",
     "gradient_cliping",
+    "get_batch",
 ]
 
 from .utils import (
@@ -12,4 +13,5 @@ from .utils import (
     MMGPT,
     compute_lr,
     gradient_cliping,
+    get_batch,
 )
