@@ -18,6 +18,8 @@ __all__ = [
     "compute_lr",
     "gradient_cliping",
     "get_batch",
+    "load",
+    "save",
 ]
 
 class GPT(nn.Module):
@@ -401,3 +403,28 @@ def get_batch(dataset: npt.NDArray, batch_size: int, context_length: int, device
         x = x.to(device)
         y = y.to(device)
     return x, y
+
+def load(src, model, optimizer):
+    check_point = torch.load(src, map_location=torch.device('cpu'))
+    
+    model.load_state_dict(check_point['model_state_dict'])
+    
+    optimizer.load_state_dict(check_point['optimizer_state_dict'])
+    
+    iteration = check_point['iteration']
+    
+    print(f"load {src} iterations: {iteration}")
+    
+    # model.train()
+    return iteration
+
+
+def save(model, optimizer, iteration, out):
+    check_point = {
+        'iteration': iteration,
+        'model_state_dict': model.state_dict(),
+        'optimizer_state_dict': optimizer.state_dict(),
+    }
+    
+    torch.save(check_point, out) 
+    print(f"save {out} iterations: {iteration}")

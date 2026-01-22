@@ -30,6 +30,7 @@ __all__ = [
     "RMSNormConv",
     "SinusoidalPosEmb",
     "RandomOrLearnedSinusoidalPosEmb",
+    "ResnetBlock",
 ]
 
 from .layers import (
@@ -64,4 +65,5 @@ from .layers import (
     RMSNormConv,
     SinusoidalPosEmb,
     RandomOrLearnedSinusoidalPosEmb,
+    ResnetBlock,
 )

@@ -10,7 +10,7 @@ from packaging import version
 from collections import namedtuple
 from functools import partial
 from torch.nn.attention import SDPBackend
-from deepul.hw3_utils.lpips import exists, default, once, print_once
+from deepul.hw3_utils.lpips import exists, default, once, print_once, divisible_by
 
 __all__ = [
     "MaskedConv2d",
@@ -44,6 +44,7 @@ __all__ = [
     "RMSNormConv",
     "SinusoidalPosEmb",
     "RandomOrLearnedSinusoidalPosEmb",
+    "ResnetBlock",
 ]
 
 class MaskedConv2d(nn.Conv2d):
@@ -809,22 +810,18 @@ class TimeEmbedding(nn.Module):
         return self.te_block(x)
 
 
-class UpSample(nn.Module):
-    """"""
-    def __init__(self) -> None:
-        super().__init__()
-        
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        raise NotImplementedError
+def UpSample(dim, dim_out=None):
+    return nn.Sequential(
+        nn.Upsample(scale_factor = 2, mode = 'nearest'),
+        nn.Conv2d(dim, default(dim_out, dim), 3, padding = 1)
+    )
 
 
-class DownSample(nn.Module):
-    """"""
-    def __init__(self) -> None:
-        super().__init__()
-        
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        raise NotImplementedError
+def DownSample(dim, dim_out=None):
+    return nn.Sequential(
+        rearrange('b c (h p1) (w p2) -> b (c p1 p2) h w', p1 = 2, p2 = 2),
+        nn.Conv2d(dim * 4, default(dim_out, dim), 1)
+    )
 
 
 class Block(nn.Module):
@@ -877,18 +874,60 @@ class RMSNormConv(nn.Module):
     
     
 class SinusoidalPosEmb(nn.Module):
-    """"""
-    def __init__(self) -> None:
+    def __init__(self, dim, theta = 10000) -> None:
         super().__init__()
-        
+        self.dim = dim
+        self.theta = theta
+
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        raise NotImplementedError
+        device = x.device
+        half_dim = self.dim // 2
+        emb = math.log(self.theta) / (half_dim - 1)
+        emb = torch.exp(torch.arange(half_dim, device=device) * -emb)
+        emb = x[:, None] * emb[None, :]
+        emb = torch.cat((emb.sin(), emb.cos()), dim=-1)
+        return emb
     
     
 class RandomOrLearnedSinusoidalPosEmb(nn.Module):
-    """"""
-    def __init__(self) -> None:
+    """ following @crowsonkb 's lead with random (learned optional) sinusoidal pos emb """
+    """ https://github.com/crowsonkb/v-diffusion-jax/blob/master/diffusion/models/danbooru_128.py#L8 """
+
+    def __init__(self, dim, is_random = False) -> None:
         super().__init__()
-        
+        assert divisible_by(dim, 2)
+        half_dim = dim // 2
+        self.weights = nn.Parameter(torch.randn(half_dim), requires_grad = not is_random)
+
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        raise NotImplementedError
+        x = rearrange(x, 'b -> b 1')
+        freqs = x * rearrange(self.weights, 'd -> 1 d') * 2 * math.pi
+        fouriered = torch.cat((freqs.sin(), freqs.cos()), dim = -1)
+        fouriered = torch.cat((x, fouriered), dim = -1)
+        return fouriered
+    
+class ResnetBlock(nn.Module):
+    def __init__(self, dim, dim_out, *, time_emb_dim = None, dropout = 0.):
+        super().__init__()
+        self.mlp = nn.Sequential(
+            nn.SiLU(),
+            nn.Linear(time_emb_dim, dim_out * 2)
+        ) if exists(time_emb_dim) else None
+
+        self.block1 = Block(dim, dim_out, dropout = dropout)
+        self.block2 = Block(dim_out, dim_out)
+        self.res_conv = nn.Conv2d(dim, dim_out, 1) if dim != dim_out else nn.Identity()
+
+    def forward(self, x, time_emb = None):
+
+        scale_shift = None
+        if exists(self.mlp) and exists(time_emb):
+            time_emb = self.mlp(time_emb)
+            time_emb = rearrange(time_emb, 'b c -> b c 1 1')
+            scale_shift = time_emb.chunk(2, dim = 1)
+
+        h = self.block1(x, scale_shift = scale_shift)
+
+        h = self.block2(h)
+
+        return h + self.res_conv(x)

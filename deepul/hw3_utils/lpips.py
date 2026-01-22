@@ -40,6 +40,14 @@ def once(fn):
 
 print_once = once(print)
 
+def cast_tuple(t, length = 1):
+    if isinstance(t, tuple):
+        return t
+    return ((t,) * length)
+
+def divisible_by(numer, denom):
+    return (numer % denom) == 0
+
 def download(url, local_path, chunk_size=1024):
     os.makedirs(os.path.split(local_path)[0], exist_ok=True)
     with requests.get(url, stream=True) as r:
