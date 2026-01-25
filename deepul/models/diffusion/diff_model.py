@@ -403,7 +403,7 @@ class UNet(nn.Module):
             ]))
         
         # Mid
-        mid_dim = dim[-1]
+        mid_dim = dims[-1]
         self.mid_block1 = resnet_block(mid_dim, mid_dim)
         self.mid_attn = FullAttention(mid_dim, heads=attn_heads[-1], dim_head=attn_dim_head[-1])
         self.mid_block2 = resnet_block(mid_dim, dim_in)
@@ -422,7 +422,7 @@ class UNet(nn.Module):
             ]))
             
         default_out_dim = channels * (1 if not learned_variance else 2)
-        self.out_dim = default(out_dim,default_out_dim)
+        self.out_dim = default(out_dim, default_out_dim)
         
         self.final_res_block = resnet_block(init_dim * 2, init_dim)
         self.final_conv = nn.Conv2d(init_dim, self.out_dim, 1)
@@ -431,12 +431,12 @@ class UNet(nn.Module):
     def downsample_factor(self):
         return 2 ** (len(self.downs) - 1)
         
-    def forward(self, x: torch.Tensor, time, x_self_cond = None) -> torch.Tensor:
+    def forward(self, x: torch.Tensor, time, x_self_cond=None) -> torch.Tensor:
         assert all([divisible_by(d, self.downsample_factor) for d in x.shape[-2:]]), f'your input dimensions {x.shape[-2:]} need to be divisible by {self.downsample_factor}, given the unet'
         
         if self.self_condition:
             x_self_cond = default(x_self_cond, lambda: torch.zeros_like(x))
-            x = torch.cat((x_self_cond, x), dim = 1)
+            x = torch.cat((x_self_cond, x), dim=1)
         
         x = self.init_conv(x)
         r = x.clone()
