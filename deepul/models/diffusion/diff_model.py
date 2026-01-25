@@ -391,7 +391,7 @@ class UNet(nn.Module):
         
         # DownSamples
         for ind, ((dim_in, dim_out),layer_full_attn, layer_attn_heads, layer_attn_dim_head) in enumerate(zip(in_out, full_attn, attn_heads, attn_dim_head)):
-            is_last >= (num_resolutions - 1)
+            is_last = ind >= (num_resolutions - 1)
             
             attn_klass = FullAttention if layer_full_attn else LinearAttention
             
@@ -410,7 +410,7 @@ class UNet(nn.Module):
         
         # UpSamples
         for ind, ((dim_in, dim_out), layer_full_attn, layer_attn_heads, layer_attn_dim_head) in enumerate(zip(*map(reversed, (in_out, full_attn, attn_heads, attn_dim_head)))):
-            is_last = ind == len(in_out) - 1
+            is_last = ind == (len(in_out) - 1)
             
             attn_klass = FullAttention if layer_full_attn else LinearAttention
             
