@@ -38,7 +38,7 @@ class GaussianDiffusion(nn.Module):
         assert not (type(self) == GaussianDiffusion and self.model.in_dim != self.model.out_dim)
         assert not hasattr(self.model, 'random_or_learned_sinusoidal_cond') or not self.model.random_or_learned_sinusoidal_cond
         
-        self.dim = getattr(self.model, 'in_dim', self.model.dim)
+        self.dim = getattr(self.model, 'in_dim', self.model.dim) or getattr(self.model, 'init_dim', self.model.dim)
         self.self_condition = self.model.self_condition
         
         self.size = size
