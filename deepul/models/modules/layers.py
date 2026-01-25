@@ -621,7 +621,7 @@ class Attend(nn.Module):
         self.attn_dropout = nn.Dropout(dropout)
         
         self.flash = flash
-        assert not (flash and version.parse(torch.__version__)) < version.parse('2.0.0'), "in order to use flash attention, you must be using pytorch 2.0 or above"
+        assert not (flash and version.parse(torch.__version__) < version.parse('2.0.0')), "in order to use flash attention, you must be using pytorch 2.0 or above"
         
         # determine efficient attention configs for cuda and cpu
         
