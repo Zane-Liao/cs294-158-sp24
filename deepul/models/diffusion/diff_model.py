@@ -27,7 +27,7 @@ class GaussianDiffusion(nn.Module):
     def __init__(
         self,
         model,
-        size,
+        size=(),
         timesteps=None,
         objective='pred_v',
         offset_noise_strength=0.,  # https://www.crosslabs.org/blog/diffusion-with-offset-noise
@@ -47,7 +47,7 @@ class GaussianDiffusion(nn.Module):
         
         assert objective in {'pred_noise', 'pred_x0', 'pred_v'}, 'objective must be either pred_noise (predict noise) or pred_x0 (predict image start) or pred_v (predict v [v-parameterization as defined in appendix D of progressive distillation paper, used in imagen-video successfully])'
 
-        self.num_timesteps = int(timesteps)
+        self.num_timesteps = int(timesteps) if timesteps is not None else None
         
         if objective == 'pred_noise':
             self.snr_fn = lambda alpha, sigma: 1.

@@ -994,7 +994,7 @@ class TimeMLP(nn.Module):
 
         # time embeddings
 
-        time_dim = emb_dim
+        time_dim = emb_dim if timesteps is not None else None
 
         self.random_or_learned_sinusoidal_cond = learned_sinusoidal_cond or random_fourier_features
 
