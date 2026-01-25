@@ -95,28 +95,28 @@ class GaussianDiffusion(nn.Module):
     def forward(self, x, model_output, alpha_t, sigma_t, rederive_pred_noise=False):
         if self.objective == 'pred_noise':
             pred_noise = model_output
-            
-            x_0 = self.predict_start_from_noise(x, pred_noise, alpha_t=alpha_t, sigma_t=sigma_t)
+
+            x_0 = self.predict_start_from_noise(x, pred_noise, alpha_t, sigma_t)
             if self.clip_fn is not None:
                 x_0 = self.clip_fn(x_0)
                 if rederive_pred_noise:
-                    pred_noise = self.predict_noise_from_start(x, pred_noise, alpha_t=alpha_t, sigma_t=sigma_t)
+                    pred_noise = self.predict_noise_from_start(x, x_0, alpha_t, sigma_t)
 
         elif self.objective == 'pred_x0':
             x_0 = model_output
-            
+
             if self.clip_fn is not None:
                 x_0 = self.clip_fn(x_0)
-                pred_noise = self.predict_noise_from_start(x, pred_noise, alpha_t=alpha_t, sigma_t=sigma_t)
-            
+            pred_noise = self.predict_noise_from_start(x, x_0, alpha_t, sigma_t)
+
         elif self.objective == 'pred_v':
             v = model_output
-            
-            x_0 = self.predict_start_from_v(x, v, alpha_t=alpha_t, sigma_t=sigma_t)
+
+            x_0 = self.predict_start_from_v(x, v, alpha_t, sigma_t)
             if self.clip_fn is not None:
                 x_0 = self.clip_fn(x_0)
-            pred_noise = self.predict_noise_from_start(x, pred_noise, alpha_t=alpha_t, sigma_t=sigma_t)
-        
+            pred_noise = self.predict_noise_from_start(x, x_0, alpha_t, sigma_t)
+
         return pred_noise, x_0
         
     @torch.inference_mode()
