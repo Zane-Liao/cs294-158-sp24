@@ -1175,7 +1175,7 @@ class TimeUnet(nn.Module):
         attn_dim_head = cast_tuple(attn_dim_head, num_stages)
 
         FullAttention = partial(Attention, flash=flash_attn)
-        PartAttention = partial(LinearAttention, out_norm=True)
+        PartAttention = LinearAttention
 
         # layers
 
