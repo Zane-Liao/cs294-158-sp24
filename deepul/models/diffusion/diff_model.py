@@ -381,7 +381,7 @@ class UNet(nn.Module):
         # prepare blocks
         
         FullAttention = partial(Attention, flash = flash_attn)
-        resnet_block = partial(ResnetBlock, time_emb_im = time_dim, dropout = dropout)
+        resnet_block = partial(ResnetBlock, time_emb_dim = time_dim, dropout = dropout)
         
         # layers
         
