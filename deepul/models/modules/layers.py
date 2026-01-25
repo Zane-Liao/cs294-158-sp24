@@ -5,6 +5,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from typing import Any, Optional, Tuple, Union
 from einops import einsum, rearrange, repeat
+from einops.layers.torch import Rearrange
 
 from packaging import version
 from collections import namedtuple
@@ -820,7 +821,7 @@ def UpSample(dim, dim_out=None):
 
 def DownSample(dim, dim_out=None):
     return nn.Sequential(
-        rearrange('b c (h p1) (w p2) -> b (c p1 p2) h w', p1 = 2, p2 = 2),
+        Rearrange('b c (h p1) (w p2) -> b (c p1 p2) h w', p1 = 2, p2 = 2),
         nn.Conv2d(dim * 4, default(dim_out, dim), 1)
     )
 
