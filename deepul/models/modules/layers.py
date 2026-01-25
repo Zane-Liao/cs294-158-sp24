@@ -11,7 +11,7 @@ from packaging import version
 from collections import namedtuple
 from functools import partial
 from torch.nn.attention import SDPBackend
-from deepul.hw3_utils.lpips import exists, default, once, print_once, divisible_by
+from deepul.hw3_utils.lpips import cast_tuple, exists, default, once, print_once, divisible_by
 
 __all__ = [
     "MaskedConv2d",
@@ -47,6 +47,7 @@ __all__ = [
     "RandomOrLearnedSinusoidalPosEmb",
     "ResnetBlock",
     "TimeMLP",
+    "TimeUnet",
 ]
 
 class MaskedConv2d(nn.Conv2d):
@@ -1051,3 +1052,224 @@ class TimeMLP(nn.Module):
             t = t + y
 
         return self.layers(torch.cat([x, t], dim=1))
+
+
+class ScaleShiftConvLayer(nn.Module):
+    def __init__(self, dim, dim_out, kernel_size=3, groups=8):
+        super().__init__()
+        self.proj = nn.Conv2d(dim, dim_out, kernel_size=kernel_size, padding=kernel_size//2)
+        self.norm = nn.GroupNorm(groups, dim_out)
+        self.act = nn.SiLU()
+
+    def forward(self, x, scale_shift=None):
+        x = self.proj(x)
+        x = self.norm(x)
+
+        if scale_shift is not None:
+            scale, shift = scale_shift
+            x = x * (1 + scale) + shift
+
+        x = self.act(x)
+        return x
+
+
+class ScaleShiftResBlock(nn.Module):
+    def __init__(self, dim, dim_out, kernel_size=3, time_emb_dim=None, groups=8):
+        super().__init__()
+        self.mlp = nn.Sequential(
+            nn.SiLU(),
+            nn.Linear(time_emb_dim, dim_out * 2)
+        ) if time_emb_dim is not None else None
+
+        self.block1 = ScaleShiftConvLayer(dim, dim_out, kernel_size=kernel_size, groups=groups)
+        self.block2 = ScaleShiftConvLayer(dim_out, dim_out, kernel_size=kernel_size, groups=groups)
+        self.res_conv = nn.Conv2d(dim, dim_out, 1) if dim != dim_out else nn.Identity()
+
+    def forward(self, x, time_emb=None):
+
+        scale_shift = None
+        if self.mlp is not None and time_emb is not None:
+            time_emb = self.mlp(time_emb)
+            time_emb = time_emb[..., None][..., None]
+            scale_shift = time_emb.chunk(2, dim=1)
+
+        h = self.block1(x, scale_shift=scale_shift)
+
+        h = self.block2(h)
+
+        return h + self.res_conv(x)
+
+
+class TimeUnet(nn.Module):
+    def __init__(
+        self,
+        dim,
+        in_dim=3,
+        out_dim=None,
+        emb_dim=None,
+        dim_mults=(1, 2, 4, 8),
+        kernel=3,
+        emb_kernel=7,
+        num_classes=1,
+        self_condition=False,
+        resnet_block_groups=8,
+        learned_variance=False,
+        learned_sinusoidal_cond=False,
+        random_fourier_features=False,
+        learned_sinusoidal_dim=16,
+        sinusoidal_pos_emb_scale=1000,
+        sinusoidal_pos_emb_theta=10000,
+        attn_dim_head=32,
+        attn_heads=4,
+        flash_attn=False
+    ):
+        super().__init__()
+
+        # determine dimensions
+
+        self.in_dim = in_dim
+        self.self_condition = self_condition
+        input_channels = self.in_dim * (2 if self_condition else 1)
+
+        emb_dim = default(emb_dim, dim)
+        self.init_conv = nn.Conv2d(input_channels, emb_dim, emb_kernel, padding=emb_kernel//2)
+
+        dims = [emb_dim, *map(lambda m: dim * m, dim_mults)]
+        in_out = list(zip(dims[:-1], dims[1:]))
+
+        block_class = partial(ScaleShiftResBlock, kernel_size=kernel, groups=resnet_block_groups)
+
+        # time embeddings
+
+        time_dim = dim * 4
+
+        self.random_or_learned_sinusoidal_cond = learned_sinusoidal_cond or random_fourier_features
+
+        if self.random_or_learned_sinusoidal_cond:
+            sinu_pos_emb = RandomOrLearnedSinusoidalPosEmb(learned_sinusoidal_dim, random_fourier_features)
+            fourier_dim = learned_sinusoidal_dim + 1
+        else:
+            sinu_pos_emb = SinusoidalPosEmb(dim, scale=sinusoidal_pos_emb_scale, theta=sinusoidal_pos_emb_theta)
+            fourier_dim = dim
+
+        self.time_emb = nn.Sequential(
+            sinu_pos_emb,
+            nn.Linear(fourier_dim, time_dim),
+            nn.GELU(),
+            nn.Linear(time_dim, time_dim)
+        )
+
+        # class embeddings
+
+        if num_classes > 1:
+            self.label_emb = nn.Embedding(num_classes + 1, time_dim, padding_idx=0)
+        else:
+            self.register_parameter('label_emb', None)
+
+        # attention
+
+        full_attn = (*((False,) * (len(dim_mults) - 1)), True)
+
+        num_stages = len(dim_mults)
+        attn_heads = cast_tuple(attn_heads, num_stages)
+        attn_dim_head = cast_tuple(attn_dim_head, num_stages)
+
+        FullAttention = partial(Attention, flash=flash_attn)
+        PartAttention = partial(LinearAttention, out_norm=True)
+
+        # layers
+
+        self.downs = nn.ModuleList([])
+        self.ups = nn.ModuleList([])
+        num_resolutions = len(in_out)
+
+        for ind, ((dim_in, dim_out), layer_full_attn, layer_attn_heads, layer_attn_dim_head) in enumerate(zip(in_out, full_attn, attn_heads, attn_dim_head)):
+            is_last = ind >= (num_resolutions - 1)
+
+            attn_class = FullAttention if layer_full_attn else PartAttention
+
+            self.downs.append(nn.ModuleList([
+                block_class(dim_in, dim_in, time_emb_dim=time_dim),
+                block_class(dim_in, dim_in, time_emb_dim=time_dim),
+                attn_class(dim_in, dim_head=layer_attn_dim_head, heads=layer_attn_heads),
+                DownSample(dim_in, dim_out) if not is_last else nn.Conv2d(dim_in, dim_out, kernel, padding=kernel//2)
+            ]))
+
+        mid_dim = dims[-1]
+        self.mid_block1 = block_class(mid_dim, mid_dim, time_emb_dim=time_dim)
+        self.mid_attn = FullAttention(mid_dim, heads=attn_heads[-1], dim_head=attn_dim_head[-1])
+        self.mid_block2 = block_class(mid_dim, mid_dim, time_emb_dim=time_dim)
+
+        for ind, ((dim_in, dim_out), layer_full_attn, layer_attn_heads, layer_attn_dim_head) in enumerate(zip(*map(reversed, (in_out, full_attn, attn_heads, attn_dim_head)))):
+            is_last = ind == (len(in_out) - 1)
+
+            attn_class = FullAttention if layer_full_attn else PartAttention
+
+            self.ups.append(nn.ModuleList([
+                block_class(dim_out + dim_in, dim_out, time_emb_dim=time_dim),
+                block_class(dim_out + dim_in, dim_out, time_emb_dim=time_dim),
+                attn_class(dim_out, dim_head=layer_attn_dim_head, heads=layer_attn_heads),
+                UpSample(dim_out, dim_in) if not is_last else nn.Conv2d(dim_out, dim_in, kernel, padding=kernel//2)
+            ]))
+
+        self.out_dim = default(out_dim, in_dim)
+        output_channels = self.out_dim * (1 if not learned_variance else 2)
+
+        self.final_res_block = block_class(dim * 2, dim, time_emb_dim=time_dim)
+        self.final_conv = nn.Conv2d(dim, output_channels, 1)
+
+    @property
+    def device(self):
+        return self.init_conv.weight.device
+
+    @property
+    def downsample_factor(self):
+        return 2 ** (len(self.downs) - 1)
+
+    def forward(self, x, time, label=None, x_self_cond=None):
+        assert all([d % self.downsample_factor == 0 for d in x.shape[-2:]]), \
+            f'input dimensions {x.shape[-2:]} need to be divisible by {self.downsample_factor}, given the unet'
+
+        if self.self_condition:
+            x_self_cond = default(x_self_cond, lambda: torch.zeros_like(x))
+            x = torch.cat((x_self_cond, x), dim=1)
+
+        x = self.init_conv(x)
+        r = x.clone()
+
+        t = self.time_emb(time)
+        if self.label_emb is not None:
+            label = torch.zeros_like(time, dtype=torch.long) if label is None else label + 1
+            y = self.label_emb(label)
+            t = t + y
+
+        h = []
+
+        for block1, block2, attn, downsample in self.downs:
+            x = block1(x, t)
+            h.append(x)
+
+            x = block2(x, t)
+            x = attn(x) + x
+            h.append(x)
+
+            x = downsample(x)
+
+        x = self.mid_block1(x, t)
+        x = self.mid_attn(x) + x
+        x = self.mid_block2(x, t)
+
+        for block1, block2, attn, upsample in self.ups:
+            x = torch.cat((x, h.pop()), dim=1)
+            x = block1(x, t)
+
+            x = torch.cat((x, h.pop()), dim=1)
+            x = block2(x, t)
+            x = attn(x) + x
+
+            x = upsample(x)
+
+        x = torch.cat((x, r), dim=1)
+
+        x = self.final_res_block(x, t)
+        return self.final_conv(x)
