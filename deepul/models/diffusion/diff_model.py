@@ -337,6 +337,7 @@ class UNet(nn.Module):
         # determine dimensions
         
         self.channels = channels
+        self.in_dim = channels
         self.self_condition = self_condition
         input_channels = channels * (2 if self_condition else 1)
         
