@@ -61,11 +61,10 @@ class GaussianDiffusion(nn.Module):
             self.clip_fn = partial(torch.clamp, min=clip_min, max=clip_max)
         else:
             self.clip_fn = None
-        
     @property
     def device(self):
-        return self.model.device
-    
+        return next(self.model.parameters()).device
+
     def _get_alpha_sigma(self, t):
         return torch.cos(t * math.pi / 2), torch.sin(t * math.pi / 2)
     
