@@ -25,7 +25,9 @@ def exists(val):
     return val is not None
 
 def default(val, d):
-    return val if exists(val) else d
+    if val is not None:
+        return val
+    return d() if callable(d) else d
 
 def once(fn):
     called = False
