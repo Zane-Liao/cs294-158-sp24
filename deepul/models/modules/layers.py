@@ -982,6 +982,7 @@ class TimeMLP(nn.Module):
 
         # determine dimensions
 
+        self.dim = dim
         self.in_dim = in_dim
         self.self_condition = self_condition
         input_dim = self.in_dim * (2 if self_condition else 1)
