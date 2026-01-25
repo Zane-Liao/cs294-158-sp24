@@ -1,3 +1,4 @@
+import math
 import os
 import numpy as np
 import matplotlib.pyplot as plt
@@ -16,34 +17,88 @@ from .utils import (
     get_data_dir,
 )
 
-def _train_epoch_loop(
-    model: nn.Module,
-    train_loader: torch.utils.data.DataLoader,
-    _optimizer: torch.optim.Optimizer,
-    grad_clip=None,
-) -> List[Any]:
-    
-    raise NotImplementedError
+def train_epoch(model, train_loader, optimizer, scheduler,
+                grad_clip=None, supervised=False):
+    model.train()
+
+    train_losses = []
+    for batch in train_loader:
+        if supervised:
+            x, y = batch
+            x = x.float().to(model.device)
+            y = y.long().to(model.device)
+            loss = model.loss(x, y=y)
+        else:
+            x, y = batch, None
+            x = x.float().to(model.device)
+            loss = model.loss(x)
+        optimizer.zero_grad()
+        loss.backward()
+        if grad_clip:
+            torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip)
+        optimizer.step()
+        scheduler.step()
+        train_losses.append(loss.item())
+    return train_losses
+
+def test(model, data_loader, supervised=False):
+    model.eval()
+
+    total_loss = 0
+    with torch.no_grad():
+        for batch in data_loader:
+            if supervised:
+                x, y = batch
+                x = x.float().to(model.device)
+                y = y.long().to(model.device)
+                loss = model.loss(x, y=y)
+            else:
+                x, y = batch, None
+                x = x.float().to(model.device)
+                loss = model.loss(x)
+            total_loss += loss * x.shape[0]
+        avg_loss = total_loss / len(data_loader.dataset)
+    return avg_loss.item()
+
+def train(model, train_loader, test_loader,
+          lr=1e-3, epochs=10, grad_clip=None,
+          warmup_steps=100, cos_decay=False,
+          supervised=False, quiet=False):
+    optimizer = torch.optim.Adam(model.parameters(), lr=lr)
+    total_steps = epochs * len(train_loader)
+    scheduler = torch.optim.lr_scheduler.LambdaLR(
+        optimizer, 
+        lr_lambda=cosine_lr_lambda(total_steps, warmup_steps, cos_decay)
+    )
+
+    train_losses = []
+    test_losses = [test(model, test_loader, supervised=supervised)]
+    for epoch in range(1, epochs+1):
+        train_loss = train_epoch(model, train_loader, optimizer, scheduler, 
+                                 grad_clip=grad_clip, supervised=supervised)
+        train_losses.extend(train_loss)
+        test_loss = test(model, test_loader, supervised=supervised)
+        test_losses.append(test_loss)
+        if not quiet:
+            print(f'Epoch {epoch}, Test loss {test_loss:.4f}')
+
+    return train_losses, test_losses
 
 
-def _simple_test_func(
-    model: nn.Module,
-    test_loader: torch.utils.data.DataLoader,
-) -> float:
-    raise NotImplementedError
-
-
-def train_loop(
-    model: nn.Module,
-    train_loader: torch.utils.data.DataLoader,
-    test_loader: torch.utils.data.DataLoader,
-    lr: float,
-    eopoch_loop: int,
-    grad_clip: float | None = None,
-    _optimizer: torch.optim.Optimizer = torch.optim.AdamW,
-) -> Tuple[List[Any], List[Any]]:
-    raise NotImplementedError
-
+def cosine_lr_lambda(total_steps, warmup_steps=100, cos_decay=True):
+    def sch(step):
+        if step < warmup_steps:
+            # Linear warmup
+            mul = (step + 1) / warmup_steps
+            return mul
+        else:
+            # Cosine decay
+            if cos_decay:
+                progress = (step - warmup_steps) / (total_steps - warmup_steps)
+                return (1 + math.cos(math.pi * progress)) / 2
+            else:
+                return 1
+    return sch
 
 ######################
 ##### Question 1 #####

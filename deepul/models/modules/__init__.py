@@ -31,6 +31,7 @@ __all__ = [
     "SinusoidalPosEmb",
     "RandomOrLearnedSinusoidalPosEmb",
     "ResnetBlock",
+    "TimeMLP",
 ]
 
 from .layers import (
@@ -66,4 +67,5 @@ from .layers import (
     SinusoidalPosEmb,
     RandomOrLearnedSinusoidalPosEmb,
     ResnetBlock,
+    TimeMLP,
 )

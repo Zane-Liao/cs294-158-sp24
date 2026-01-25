@@ -11,6 +11,7 @@ __all__ = [
     "ImageDataLoader",
     "NCHWDataLoader",
     "DiffDataLoader",
+    "LabeledDataset",
 ]
 
 class IntDataLoader:
@@ -66,3 +67,17 @@ class DiffDataLoader(torch.utils.data.DataSet):
         
     def __len__(self):
         raise NotImplementedError
+    
+    
+class LabeledDataset:
+    def __init__(self, data, labels, dropout=0.):
+        self.data = torch.FloatTensor(data)
+        self.labels = labels
+        self.dropout = dropout
+
+    def __getitem__(self, index):
+        return (self.data[index], self.labels[index]
+            if self.dropout <= 0 or random.random() > self.dropout else -1)
+
+    def __len__(self):
+        return len(self.labels)

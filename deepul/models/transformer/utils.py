@@ -235,13 +235,6 @@ class MMGPT(nn.Module):
                  kernel_size: int = 7,
                  ) -> None:
         super().__init__()
-        self.image_shape = image_shape
-        
-        self.mmgpt_block = MMGPTBlock(
-            d_model=d_model,
-            num_heads=num_heads,
-            n_dims=1,
-        )
         raise NotImplementedError
         
     def forward(self, x: torch.Tensor) -> torch.Tensor:

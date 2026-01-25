@@ -45,6 +45,7 @@ __all__ = [
     "SinusoidalPosEmb",
     "RandomOrLearnedSinusoidalPosEmb",
     "ResnetBlock",
+    "TimeMLP",
 ]
 
 class MaskedConv2d(nn.Conv2d):
@@ -825,12 +826,23 @@ def DownSample(dim, dim_out=None):
 
 
 class Block(nn.Module):
-    """"""
-    def __init__(self) -> None:
+    def __init__(self, dim, dim_out, dropout = 0.):
         super().__init__()
-        
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        raise NotImplementedError
+        self.proj = nn.Conv2d(dim, dim_out, 3, padding = 1)
+        self.norm = RMSNormConv(dim_out)
+        self.act = nn.SiLU()
+        self.dropout = nn.Dropout(dropout)
+
+    def forward(self, x, scale_shift = None):
+        x = self.proj(x)
+        x = self.norm(x)
+
+        if exists(scale_shift):
+            scale, shift = scale_shift
+            x = x * (scale + 1) + shift
+
+        x = self.act(x)
+        return self.dropout(x)
 
 
 class Residualblock(nn.Module):
@@ -840,15 +852,29 @@ class Residualblock(nn.Module):
         
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         raise NotImplementedError
-    
+
+
+def modulate(x, shift, scale):
+    return x * (1 + scale.unsqueeze(1)) + shift.unsqueeze(1)
 
 class FinalLayer(nn.Module):
-    """"""
-    def __init__(self) -> None:
+    """
+    The final layer of DiT.
+    """
+    def __init__(self, hidden_size, patch_size, out_channels):
         super().__init__()
-        
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        raise NotImplementedError
+        self.norm_final = nn.LayerNorm(hidden_size, elementwise_affine=False, eps=1e-6)
+        self.linear = nn.Linear(hidden_size, patch_size * patch_size * out_channels, bias=True)
+        self.adaLN_modulation = nn.Sequential(
+            nn.SiLU(),
+            nn.Linear(hidden_size, 2 * hidden_size, bias=True)
+        )
+
+    def forward(self, x, c):
+        shift, scale = self.adaLN_modulation(c).chunk(2, dim=1)
+        x = modulate(self.norm_final(x), shift, scale)
+        x = self.linear(x)
+        return x
     
 
 class RMSNorm2d(nn.Module):
@@ -905,7 +931,8 @@ class RandomOrLearnedSinusoidalPosEmb(nn.Module):
         fouriered = torch.cat((freqs.sin(), freqs.cos()), dim = -1)
         fouriered = torch.cat((x, fouriered), dim = -1)
         return fouriered
-    
+
+
 class ResnetBlock(nn.Module):
     def __init__(self, dim, dim_out, *, time_emb_dim = None, dropout = 0.):
         super().__init__()
@@ -931,3 +958,93 @@ class ResnetBlock(nn.Module):
         h = self.block2(h)
 
         return h + self.res_conv(x)
+    
+    
+class TimeMLP(nn.Module):
+    def __init__(
+        self,
+        dim,
+        in_dim=3,
+        out_dim=None,
+        emb_dim=None,
+        num_layers=4,
+        num_classes=1,
+        self_condition=False,
+        learned_variance=False,
+        learned_sinusoidal_cond=False,
+        random_fourier_features=False,
+        learned_sinusoidal_dim=16,
+        sinusoidal_pos_emb_scale=1000,
+        sinusoidal_pos_emb_theta=10000
+    ):
+        super().__init__()
+
+        # determine dimensions
+
+        self.in_dim = in_dim
+        self.self_condition = self_condition
+        input_dim = self.in_dim * (2 if self_condition else 1)
+
+        emb_dim = default(emb_dim, dim)
+        self.init_emb = nn.Linear(input_dim, emb_dim)
+
+        self.out_dim = default(out_dim, in_dim)
+        output_dim = self.out_dim * (1 if not learned_variance else 2)
+
+        # time embeddings
+
+        time_dim = emb_dim
+
+        self.random_or_learned_sinusoidal_cond = learned_sinusoidal_cond or random_fourier_features
+
+        if self.random_or_learned_sinusoidal_cond:
+            sinu_pos_emb = RandomOrLearnedSinusoidalPosEmb(learned_sinusoidal_dim, random_fourier_features)
+            fourier_dim = learned_sinusoidal_dim + 1
+        else:
+            sinu_pos_emb = SinusoidalPosEmb(emb_dim, scale=sinusoidal_pos_emb_scale, theta=sinusoidal_pos_emb_theta)
+            fourier_dim = emb_dim
+
+        self.time_emb = nn.Sequential(
+            sinu_pos_emb,
+            nn.Linear(fourier_dim, time_dim),
+            nn.GELU(),
+            nn.Linear(time_dim, time_dim)
+        )
+
+        # class embeddings
+
+        if num_classes > 1:
+            self.label_emb = nn.Embedding(num_classes + 1, time_dim, padding_idx=0)
+        else:
+            self.register_parameter('label_emb', None)
+
+        # layers
+
+        dims = [2*emb_dim, *[dim]*num_layers, output_dim]
+        in_out = list(zip(dims[:-1], dims[1:]))
+
+        layers = []
+        for ind, (dim_in, dim_out) in enumerate(in_out):
+            layers.extend([
+                nn.ReLU(),
+                nn.Linear(dim_in, dim_out)
+            ])
+        self.layers = nn.Sequential(*layers)
+
+    @property
+    def device(self):
+        return self.init_emb.weight.device
+
+    def forward(self, x, time, label=None, x_self_cond=None):
+        if self.self_condition:
+            x_self_cond = default(x_self_cond, lambda: torch.zeros_like(x))
+            x = torch.cat((x_self_cond, x), dim=1)
+
+        x = self.init_emb(x)
+        t = self.time_emb(time)
+        if self.label_emb is not None:
+            label = torch.zeros_like(time, dtype=torch.long) if label is None else label + 1
+            y = self.label_emb(label)
+            t = t + y
+
+        return self.layers(torch.cat([x, t], dim=1))
