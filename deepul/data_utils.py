@@ -10,7 +10,6 @@ __all__ = [
     "IntDataLoader",
     "ImageDataLoader",
     "NCHWDataLoader",
-    "DiffDataLoader",
     "LabeledDataset",
 ]
 
@@ -56,17 +55,6 @@ class NCHWDataLoader(torch.utils.data.Dataset):
 
     def __len__(self):
         return len(self.data)
-    
-    
-class DiffDataLoader(torch.utils.data.DataSet):
-    def __init__(self, data, device):
-        raise NotImplementedError
-
-    def __getitem__(self, idx):
-        raise NotImplementedError
-        
-    def __len__(self):
-        raise NotImplementedError
     
     
 class LabeledDataset:

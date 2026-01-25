@@ -900,17 +900,18 @@ class RMSNormConv(nn.Module):
     
     
 class SinusoidalPosEmb(nn.Module):
-    def __init__(self, dim, theta = 10000) -> None:
+    def __init__(self, dim, scale=1000, theta=10000):
         super().__init__()
         self.dim = dim
+        self.scale = scale
         self.theta = theta
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(self, x):
         device = x.device
         half_dim = self.dim // 2
         emb = math.log(self.theta) / (half_dim - 1)
         emb = torch.exp(torch.arange(half_dim, device=device) * -emb)
-        emb = x[:, None] * emb[None, :]
+        emb = self.scale * x[:, None] * emb[None, :]
         emb = torch.cat((emb.sin(), emb.cos()), dim=-1)
         return emb
     
