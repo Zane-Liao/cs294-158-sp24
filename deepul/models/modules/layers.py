@@ -739,7 +739,7 @@ class LinearAttention(nn.Module):
         num_mem_kv = 4,
         ) -> None:
         super().__init__()
-        self.scale = dim_head * -0.5
+        self.scale = dim_head ** -0.5
         self.heads = heads
         hidden_dim = dim_head * heads
         

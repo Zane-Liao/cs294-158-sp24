@@ -17,8 +17,14 @@ from .utils import (
     get_data_dir,
 )
 
-def train_epoch(model, train_loader, optimizer, scheduler,
-                grad_clip=None, supervised=False):
+def train_epoch(
+    model,
+    train_loader,
+    optimizer,
+    scheduler,
+    grad_clip=1.0,
+    supervised=False
+    ):
     model.train()
 
     train_losses = []
@@ -41,7 +47,11 @@ def train_epoch(model, train_loader, optimizer, scheduler,
         train_losses.append(loss.item())
     return train_losses
 
-def test(model, data_loader, supervised=False):
+def test(
+    model,
+    data_loader,
+    supervised=False
+    ):
     model.eval()
 
     total_loss = 0
@@ -60,10 +70,18 @@ def test(model, data_loader, supervised=False):
         avg_loss = total_loss / len(data_loader.dataset)
     return avg_loss.item()
 
-def train(model, train_loader, test_loader,
-          lr=1e-3, epochs=10, grad_clip=None,
-          warmup_steps=100, cos_decay=False,
-          supervised=False, quiet=False):
+def train(
+    model,
+    train_loader,
+    test_loader,
+    lr=1e-3,
+    epochs=60,
+    grad_clip=1.0,
+    warmup_steps=100,
+    cos_decay=False,
+    supervised=False,
+    quiet=False
+    ):
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
     total_steps = epochs * len(train_loader)
     scheduler = torch.optim.lr_scheduler.LambdaLR(
@@ -73,14 +91,14 @@ def train(model, train_loader, test_loader,
 
     train_losses = []
     test_losses = [test(model, test_loader, supervised=supervised)]
-    for epoch in range(1, epochs+1):
+    for epoch in range(epochs):
         train_loss = train_epoch(model, train_loader, optimizer, scheduler, 
                                  grad_clip=grad_clip, supervised=supervised)
         train_losses.extend(train_loss)
         test_loss = test(model, test_loader, supervised=supervised)
         test_losses.append(test_loss)
         if not quiet:
-            print(f'Epoch {epoch}, Test loss {test_loss:.4f}')
+            print(f'Epoch {epoch+1}/{epochs}, Test loss {test_loss:.4f}')
 
     return train_losses, test_losses
 
