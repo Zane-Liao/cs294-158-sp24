@@ -718,14 +718,14 @@ class Linearattention(nn.Module):
 
         mod = nn.Conv1d if n_dims==1 else nn.Conv2d if n_dims==2 else nn.Conv3d
 
-        self.norm = RMSNorm2d(dim, n_dims)
+        self.norm = RMSNormConv(dim, n_dims)
 
         self.mem_kv = nn.Parameter(torch.randn(2, heads, dim_head, num_mem_kv))
         self.to_qkv = mod(dim, hidden_dim * 3, 1, bias=False)
 
         to_out = [mod(hidden_dim, dim, 1)]
         if out_norm:
-            to_out.append(RMSNorm2d(dim, n_dims))
+            to_out.append(RMSNormConv(dim, n_dims))
         self.to_out = nn.Sequential(*to_out)
 
     def forward(self, x):
