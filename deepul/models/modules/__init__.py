@@ -16,7 +16,6 @@ __all__ = [
     "DepthToSpace",
     "SpaceToDepth",
     "Attend",
-    "Attention",
     "LinearAttention",
     "MLP",
     "FeedForward",
@@ -32,6 +31,7 @@ __all__ = [
     "RandomOrLearnedSinusoidalPosEmb",
     "ResnetBlock",
     "TimeMLP",
+    "modulate",
 ]
 
 from .layers import (
@@ -52,7 +52,6 @@ from .layers import (
     DepthToSpace,
     SpaceToDepth,
     Attend,
-    Attention,
     LinearAttention,
     MLP,
     FeedForward,
@@ -68,4 +67,5 @@ from .layers import (
     RandomOrLearnedSinusoidalPosEmb,
     ResnetBlock,
     TimeMLP,
+    modulate,
 )

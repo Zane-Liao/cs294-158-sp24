@@ -31,7 +31,6 @@ __all__ = [
     "DepthToSpace",
     "SpaceToDepth",
     "Attend",
-    "Attention",
     "LinearAttention",
     "MLP",
     "FeedForward",
@@ -47,6 +46,7 @@ __all__ = [
     "RandomOrLearnedSinusoidalPosEmb",
     "ResnetBlock",
     "TimeMLP",
+    "modulate",
 ]
 
 class MaskedConv2d(nn.Conv2d):
@@ -159,6 +159,7 @@ class MaskedResidualblock(nn.Module):
         return x + out
     
 
+@torch.compile
 class Linear(nn.Module):
     __constants__ = ['in_features', 'out_features']
     in_features: int

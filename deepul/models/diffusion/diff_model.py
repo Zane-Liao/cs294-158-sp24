@@ -14,6 +14,7 @@ import numpy as np
 import numpy.typing as npt
 from deepul.hw3_utils.lpips import exists, default, once, print_once, cast_tuple, divisible_by
 from functools import partial
+from timm.models.vision_transformer import PatchEmbed, Attention, Mlp
 
 from deepul.models.modules.layers import ScaleShiftResBlock
 
@@ -283,35 +284,108 @@ class GaussianDiffusion(nn.Module):
 
 
 class DiT(nn.Module):
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        input_shape,
+        patch_size,
+        hidden_size,
+        num_heads,
+        num_layers,
+        num_classes,
+        cfg_dropout_prob,
+        ) -> None:
         super().__init__()
+        self.input_shape = input_shape
+        self.patch_size = patch_size
+        self.hidden_size = hidden_size
+        self.num_heads = num_heads
+        self.num_layers = num_layers
+        self.num_classes = num_classes
+        self.cfg_dropout_prob = cfg_dropout_prob
         
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        raise NotImplementedError
+        self.embedding = nn.Embedding(num_classes + 1, hidden_size)
+        self.layers = nn.ModuleList([
+            DiTBlock(hidden_size, num_heads)
+            for _ in range(num_layers)
+        ])
+        self.final = FinalLayer(hidden_size, patch_size, input_shape[0])
+        self.proj = nn.Linear(self.patch_size * self.patch_size * input_shape[0], hidden_size)
+        
+    def dropout_classes(self, y, cfg_dropout_prob):
+        p = torch.rand(y.shape[0]) < cfg_dropout_prob
+        y[p] = self.num_classes
+        return y
+        
+    def forward(self, x: torch.Tensor, y: torch.Tensor, t: torch.Tensor) -> torch.Tensor:
+        x = patchify_flatten(x, self.patch_size)
+        pos_embed += torch.from_numpy(get_2d_sincos_pos_embed(x.shape[-1], x.shape[1].to(torch.float32))).to(x.device)
+        x = self.proj(x)
+        x = x + pos_embed.unsqueeze(-1)[:x.shape[0]]
+        
+        t = compute_timestep_embedding(t, self.patch_size)
+        if self.training:
+            y = self.dropout_classes(y, self.cfg_dropout_prob)
+        y = nn.Embedding(y)
+        c = t + y
+        
+        for layer in self.layers: 
+            x = layer(x, c)
+
+        x = self.final(x)
+        x = unpatchify(x, self.patch_size, self.input_shape[1], self.input_shape[2])
+        
+        return x
+        
+    def ddip_sample(self):
+        return
     
+    def sample(self):
+        return
+    
+    def p_losses(self):
+        return
+    
+    def loss(self):
+        return
+
 
 class DiTBlock(nn.Module):
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        hidden_size,
+        num_heads,
+        ) -> None:
         super().__init__()
+        self.hidden_size = hidden_size
+        self.num_heads = num_heads
         
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        raise NotImplementedError
-
-
-class ViT(nn.Module):
-    def __init__(self) -> None:
-        super().__init__()
+        self.silu = nn.SiLU()
+        self.linear = nn.Linear(hidden_size, 6 * hidden_size)
+        self.norm1 = nn.LayerNorm(hidden_size, elementwise_affine=False)
+        self.attn = Attention(hidden_size, num_heads=num_heads, qkv_bias=True)
+        self.norm2 = nn.LayerNorm(hidden_size, elementwise_affine=False)
+        mlp_hidden_ratio = int(hidden_size * 4.0)
+        approx_silu = lambda: nn.SiLU()
+        self.mlp = Mlp(
+            in_features=hidden_size,
+            hidden_features=mlp_hidden_ratio,
+            act_layer=approx_silu,
+        )
         
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        raise NotImplementedError
-
-
-class ViTBlock(nn.Module):
-    def __init__(self) -> None:
-        super().__init__()
+    def forward(self, x: torch.Tensor, c: torch.Tensor) -> torch.Tensor:
+        c = self.silu(c)
+        c = self.linear(c)
+        shift_msa, scale_msa, gate_msa, shift_mlp, scale_mlp, gate_mlp = c.chunk(6, dim=1)
         
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        raise NotImplementedError
+        h = self.norm1(x)
+        h = modulate(h, shift_msa, scale_msa)
+        x = x + gate_msa.unsqueeze(1) * self.attn(h)
+        
+        h = self.norm2(x)
+        h = modulate(h, shift_mlp, scale_mlp)
+        x = x + gate_mlp.unsqueeze(1) * self.mlp(h)
+        
+        return x
 
 
 class UNet(nn.Module):
@@ -651,13 +725,13 @@ class TimeUnet(nn.Module):
         x = self.final_res_block(x, t)
         return self.final_conv(x)
 
-def timestep_embedding(timesteps, dim, max_period=10000):
+def compute_timestep_embedding(timesteps, dim, max_period=10000):
     half = dim // 2
-    freqs = np.exp(-np.log(max_period) * np.arange(0, half, dtype=torch.float32) / half)
-    args = timesteps[:, None].astype(torch.float32) * freqs[None]
-    embedding = torch.cat([np.cos(args), np.sin(args)], axis=-1)
+    freqs = torch.exp(-math.log(max_period) * torch.arange(0, half, dtype=torch.float32) / half)
+    args = timesteps[:, None].float() * freqs[None]
+    embedding = torch.cat([torch.cos(args), torch.sin(args)], dim=-1)
     if dim % 2:
-        embedding = torch.cat([embedding, np.zeros_like(embedding[:, :1])], axis=-1)
+        embedding = torch.cat([embedding, torch.zeros_like(embedding[:, :1])], dim=-1)
     return embedding
 
 # gaussian diffusion trainer class
@@ -703,10 +777,49 @@ def sigmoid_beta_schedule(timesteps, start = -3, end = 3, tau = 1, clamp_min = 1
     betas = 1 - (alphas_cumprod[1:] / alphas_cumprod[:-1])
     return torch.clip(betas, 0, 0.999)
 
-def ddpm_sample():
-    """"""
-    raise NotImplementedError
+def get_1d_sincos_pos_embed_from_grid(embed_dim, pos):
+    assert embed_dim % 2 == 0
+    omega = np.arange(embed_dim // 2, dtype=np.float64)
+    omega /= embed_dim / 2.
+    omega = 1. / 10000**omega  # (D/2,)
 
+    pos = pos.reshape(-1)  # (M,)
+    out = np.einsum('m,d->md', pos, omega)  # (M, D/2), outer product
+
+    emb_sin = np.sin(out) # (M, D/2)
+    emb_cos = np.cos(out) # (M, D/2)
+
+    emb = np.concatenate([emb_sin, emb_cos], axis=1)  # (M, D)
+    return emb
+    
+def get_2d_sincos_pos_embed_from_grid(embed_dim, grid):
+    assert embed_dim % 2 == 0
+
+    # use half of dimensions to encode grid_h
+    emb_h = get_1d_sincos_pos_embed_from_grid(embed_dim // 2, grid[0])  # (H*W, D/2)
+    emb_w = get_1d_sincos_pos_embed_from_grid(embed_dim // 2, grid[1])  # (H*W, D/2)
+
+    emb = np.concatenate([emb_h, emb_w], axis=1) # (H*W, D)
+    return emb
+
+def get_2d_sincos_pos_embed(embed_dim, grid_size):
+    grid_h = np.arange(grid_size, dtype=np.float32)
+    grid_w = np.arange(grid_size, dtype=np.float32)
+    grid = np.meshgrid(grid_w, grid_h)  # here w goes first
+    grid = np.stack(grid, axis=0)
+
+    grid = grid.reshape([2, 1, grid_size, grid_size])
+    pos_embed = get_2d_sincos_pos_embed_from_grid(embed_dim, grid)
+    return pos_embed
+
+def patchify_flatten(x: torch.Tensor, patch_size):
+    B, C, H, W = x.shape
+    return x.view(B, C, H // patch_size, patch_size, W // patch_size, patch_size).permute(0, 2, 4, 1, 3, 5).reshape(B, -1, C * patch_size * patch_size)
+
+def unpatchify(x: torch.Tensor, patch_size, H, W):
+    B, L, D = x.shape
+    C = D // (patch_size * patch_size)
+    return x.reshape(B, H // patch_size, W // patch_size, C, patch_size, patch_size).permute(0, 3, 1, 4, 2, 5).reshape(B, C, H, W)
 
 class Linearattention(nn.Module):
     def __init__(self, dim, heads=4, dim_head=32, n_dims=2, num_mem_kv=4, out_norm=False):

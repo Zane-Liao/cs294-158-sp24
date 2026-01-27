@@ -2,14 +2,12 @@ __all__ = [
     "GaussianDiffusion",
     "DiT",
     "UNet",
-    "timestep_embedding",
-    "ddpm_sample",
+    "TimeUnet",
 ]
 
 from .diff_model import (
     GaussianDiffusion,
     DiT,
     UNet,
-    timestep_embedding,
-    ddpm_sample,
+    TimeUnet,
 )
