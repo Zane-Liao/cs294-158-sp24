@@ -319,7 +319,7 @@ class DiT(nn.Module):
         
     def forward(self, x: torch.Tensor, y: torch.Tensor, t: torch.Tensor) -> torch.Tensor:
         x = patchify_flatten(x, self.patch_size)
-        pos_embed = torch.from_numpy(get_2d_sincos_pos_embed(x.shape[-1], x.shape[1].to(torch.float32))).to(x.device)
+        pos_embed = torch.from_numpy(get_2d_sincos_pos_embed(x.shape[-1], x.shape[1])).to(torch.float32).to(x.device)
         x = self.proj(x)
         x = x + pos_embed.unsqueeze(-1)[:x.shape[0]]
         
