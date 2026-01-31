@@ -154,7 +154,7 @@ PROJECT_ROOT = "/Users/zaneliao/Documents/quant/Artificial-Intelligence/cs236/cs
 
 def get_data_dir(hw_number: int):
     # cs294-158-sp24
-    return join(PROJECT_ROOT, 'homeworks', f'hw{hw_number}', 'data')
+    return join('cs294-158-sp24', 'homeworks', f'hw{hw_number}', 'data')
 
 
 def quantize(images: np.ndarray, n_bits: int = 8):
