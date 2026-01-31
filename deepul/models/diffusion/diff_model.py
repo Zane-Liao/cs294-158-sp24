@@ -5,7 +5,7 @@ from einops import einsum, rearrange
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from typing import Any, Iterable, Literal, Optional, Tuple, Union
+from typing import Any, Iterable, Literal, Optional, Tuple, Union, Sequence
 
 from jaxtyping import Float, Int
 
@@ -303,6 +303,7 @@ class DiT(nn.Module):
         self.num_classes = num_classes
         self.cfg_dropout_prob = cfg_dropout_prob
         
+        self.in_channels = input_shape[0]
         self.embedding = nn.Embedding(num_classes + 1, hidden_size)
         self.layers = nn.ModuleList([
             DiTBlock(hidden_size, num_heads)
@@ -311,7 +312,7 @@ class DiT(nn.Module):
         self.final = FinalLayer(hidden_size, patch_size, input_shape[0])
         self.proj = nn.Linear(self.patch_size * self.patch_size * input_shape[0], hidden_size)
         
-    def dropout_classes(self, y, cfg_dropout_prob):
+    def dropout_classes(self, y: torch.Tensor, cfg_dropout_prob):
         p = torch.rand(y.shape[0]) < cfg_dropout_prob
         y[p] = self.num_classes
         return y
@@ -322,10 +323,10 @@ class DiT(nn.Module):
         x = self.proj(x)
         x = x + pos_embed.unsqueeze(-1)[:x.shape[0]]
         
-        t = compute_timestep_embedding(t, self.patch_size)
+        t = compute_timestep_embedding(t, self.hidden_size)
         if self.training:
             y = self.dropout_classes(y, self.cfg_dropout_prob)
-        y = nn.Embedding(y)
+        y = self.embedding(y)
         c = t + y
         
         for layer in self.layers: 
@@ -335,18 +336,85 @@ class DiT(nn.Module):
         x = unpatchify(x, self.patch_size, self.input_shape[1], self.input_shape[2])
         
         return x
+
+    @property
+    def device(self):
+        return next(self.parameters()).device
+    
+    def _get_alpha_sigma(self, t):
+        return torch.cos(t * math.pi / 2), torch.sin(t * math.pi / 2)
+
+    @torch.inference_mode()
+    def sample(
+        self,
+        num_steps: int,
+        batch_size: int,
+        y: torch.Tensor,
+        cfg_scale: float,
+        cfg_rescale: float = 0.0,
+        device: torch.device = None,
+        seed: Optional[int] = None,
+    ):
+        self.eval()
+        if device is None: device = self.device
+        generator = torch.Generator(device=device)
+        if seed is not None: generator.manual_seed(seed)
+
+        ts = torch.linspace(1.0 - 1e-4, 1e-4, num_steps + 1, device=device)
+        shape = (batch_size, self.in_channels, self.input_shape[1], self.input_shape[2])
+        x = torch.randn(shape, device=device, generator=generator)
+        y_null = torch.full_like(y, self.num_classes)
         
-    def ddip_sample(self):
-        return
-    
-    def sample(self):
-        return
-    
-    def p_losses(self):
-        return
-    
-    def loss(self):
-        return
+        alpha_all, sigma_all = self._get_alpha_sigma(ts)
+
+        for i in range(num_steps):
+            t_curr = ts[i]
+            
+            x_in = torch.cat([x, x], dim=0)
+            t_in = torch.full((batch_size * 2,), float(t_curr), device=device)
+            y_in = torch.cat([y, y_null], dim=0)
+            
+            noise_pred = self.forward(x_in, y_in, t_in)
+            eps_cond, eps_uncond = noise_pred.chunk(2, dim=0)
+            
+            eps_hat = eps_uncond + cfg_scale * (eps_cond - eps_uncond)
+
+            if cfg_rescale > 0.0:
+                std_cond = eps_cond.std(dim=[1,2,3], keepdim=True)
+                std_hat = eps_hat.std(dim=[1,2,3], keepdim=True)
+                eps_hat_rescaled = eps_hat * (std_cond / (std_hat + 1e-8))
+                eps_hat = eps_hat_rescaled * cfg_rescale + eps_hat * (1.0 - cfg_rescale)
+
+            a_t = alpha_all[i].view(1, 1, 1, 1)
+            s_t = sigma_all[i].view(1, 1, 1, 1)
+            a_prev = alpha_all[i+1].view(1, 1, 1, 1)
+            s_prev = sigma_all[i+1].view(1, 1, 1, 1)
+
+            pred_x0 = (x - s_t * eps_hat) / a_t.clamp(min=1e-5)
+            
+            pred_x0 = pred_x0.clamp(-1.0, 1.0)
+
+            dir_xt = s_prev * eps_hat
+            x = a_prev * pred_x0 + dir_xt
+
+        return x
+
+    def loss(self, x: torch.Tensor, y: torch.Tensor | None = None) -> torch.Tensor:
+        device = x.device
+        b = x.shape[0]
+        if y is None:
+            y = torch.full((b,), self.num_classes, dtype=torch.long, device=device)
+        
+        t = torch.rand(b, device=device)
+        eps = torch.randn_like(x, device=device)
+        alpha, sigma = self._get_alpha_sigma(t)
+        
+        alpha = alpha.view(b, 1, 1, 1)
+        sigma = sigma.view(b, 1, 1, 1)
+        x_t = alpha * x + sigma * eps
+        
+        pred = self.forward(x_t, y, t)
+        return F.mse_loss(pred, eps, reduction="mean")
 
 
 class DiTBlock(nn.Module):
