@@ -793,9 +793,10 @@ class TimeUnet(nn.Module):
         x = self.final_res_block(x, t)
         return self.final_conv(x)
 
-def compute_timestep_embedding(timesteps, dim, max_period=10000):
+def compute_timestep_embedding(timesteps: torch.Tensor, dim, max_period=10000):
+    device = timesteps.device
     half = dim // 2
-    freqs = torch.exp(-math.log(max_period) * torch.arange(0, half, dtype=torch.float32) / half)
+    freqs = torch.exp(-math.log(max_period) * torch.arange(0, half, dtype=torch.float32, device=device) / half)
     args = timesteps[:, None].float() * freqs[None]
     embedding = torch.cat([torch.cos(args), torch.sin(args)], dim=-1)
     if dim % 2:
