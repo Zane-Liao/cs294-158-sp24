@@ -332,7 +332,7 @@ class DiT(nn.Module):
         for layer in self.layers: 
             x = layer(x, c)
 
-        x = self.final(x)
+        x = self.final(x, c)
         x = unpatchify(x, self.patch_size, self.input_shape[1], self.input_shape[2])
         
         return x

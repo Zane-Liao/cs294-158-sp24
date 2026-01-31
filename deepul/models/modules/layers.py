@@ -859,6 +859,7 @@ class Residualblock(nn.Module):
 def modulate(x, shift, scale):
     return x * (1 + scale.unsqueeze(1)) + shift.unsqueeze(1)
 
+@torch.compile
 class FinalLayer(nn.Module):
     """
     The final layer of DiT.
