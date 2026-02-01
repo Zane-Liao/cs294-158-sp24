@@ -309,8 +309,13 @@ class DiT(nn.Module):
             DiTBlock(hidden_size, num_heads)
             for _ in range(num_layers)
         ])
+        self.time_mlp = nn.Sequential(
+            nn.Linear(hidden_size, hidden_size),
+            nn.SiLU(),
+            nn.Linear(hidden_size, hidden_size),
+        )
         self.final = FinalLayer(hidden_size, patch_size, input_shape[0])
-        self.proj = nn.Linear(self.patch_size * self.patch_size * input_shape[0], hidden_size)
+        self.proj = nn.Linear(patch_size * patch_size * input_shape[0], hidden_size)
         
     def dropout_classes(self, y: torch.Tensor, cfg_dropout_prob):
         p = torch.rand(y.shape[0]) < cfg_dropout_prob
@@ -319,11 +324,14 @@ class DiT(nn.Module):
         
     def forward(self, x: torch.Tensor, y: torch.Tensor, t: torch.Tensor) -> torch.Tensor:
         x = patchify_flatten(x, self.patch_size)
-        pos_embed = torch.from_numpy(get_2d_sincos_pos_embed(x.shape[-1], x.shape[1])).to(torch.float32).to(x.device)
         x = self.proj(x)
-        x = x + pos_embed.unsqueeze(-1)[:x.shape[0]]
+        grid_size = int(x.shape[1] ** 0.5)
+        pos_embed = get_2d_sincos_pos_embed(self.hidden_size, grid_size)
+        pos_embed = torch.from_numpy(pos_embed).float().to(x.device)
+        x = x + pos_embed.unsqueeze(0)
         
         t = compute_timestep_embedding(t, self.hidden_size)
+        t = self.time_mlp(t.to(x.dtype))
         if self.training:
             y = self.dropout_classes(y, self.cfg_dropout_prob)
         y = self.embedding(y)
