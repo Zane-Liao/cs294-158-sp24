@@ -16,6 +16,7 @@ __all__ = [
     "DepthToSpace",
     "SpaceToDepth",
     "Attend",
+    "ChoiceAttention",
     "LinearAttention",
     "MLP",
     "FeedForward",
@@ -32,6 +33,9 @@ __all__ = [
     "ResnetBlock",
     "TimeMLP",
     "modulate",
+    "UNet",
+    "TimeUnet",
+    "ScaleShiftResBlock",
 ]
 
 from .layers import (
@@ -52,6 +56,7 @@ from .layers import (
     DepthToSpace,
     SpaceToDepth,
     Attend,
+    ChoiceAttention,
     LinearAttention,
     MLP,
     FeedForward,
@@ -68,4 +73,7 @@ from .layers import (
     ResnetBlock,
     TimeMLP,
     modulate,
+    UNet,
+    TimeUnet,
+    ScaleShiftResBlock,
 )
